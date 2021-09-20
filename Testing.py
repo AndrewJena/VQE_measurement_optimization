@@ -3,161 +3,103 @@ from Functions import *
 # WORKING CODE
 
 # Runtime notes:
-	# Pauli Matrix time grows linearly with p, exponentially with q (q=12 max)
-	# Ground State time grows exponentially with q (q=12 max)
-	# Variance Graph time grows quadratically with p, exponentially with q (p=1000,q=12 max)
+	# Pauli Matrix time grows linearly with p, exponentially with q (q=18 max)
+	# Ground State time grows exponentially with q (q=18 max)
+	# Variance Graph time grows quadratically with p, exponentially with q (p=1000,q=18 max)
 	# Commutation Graph time grows quadratically with p (p=5000 max)
 	# Greedy Minimum Parts time grows linearly with p (p=20000 max)
 	# Greedy Minimum Shots grows linearly with p (p=20000 max)
 	# Anneal Minimum Shots grows quadratically with p (p=1000 max)
 
 
-error = None
-shots = 100
-p = 10
-q = 4
+shots = 10
+q = 10
+p = 100
 d = q
 
-P = very_random_Ham(p,q,d)
+timeflag = time.time()
+P = random_Ham(p,q,d)
 constants = [random.uniform(-1,1) for a in range(p)]
-# constants = [1 for a in range(p)]
-print_Ham_string(P,constants)
+# print_Ham_string(P,constants)
 print("Paulis:",p)
 print("Qubits:",q)
 print()
+setup_time = time.time()-timeflag
 
+timeflag = time.time()
 m = sum(pauli_to_matrix(P.a_pauli(a))*constants[a] for a in range(p))
-# print(m)
+# print(m.toarray())
+pauli_to_matrix_time = time.time()-timeflag
 
+timeflag = time.time()
 psi = ground_state(m)
 # print(psi)
+ground_state_time = time.time()-timeflag
 
+timeflag = time.time()
 A = variance_graph(P,constants,psi)
-# print_graph(A)
-# print()
+# A.print()
+variance_graph_time = time.time()-timeflag
+
+timeflag = time.time()
+aaa = greedy_min_parts(A)
+# print(aaa)
+clique_cover_time = time.time()-timeflag
+
+diag_circuit_time = 0
+diag_unitary_time = 0
+diag_psi_time = 0
+diag_prob_dist_time = 0
+diag_sample_time = 0
+for _ in range(shots):
+    aa = aaa[random.randint(0,len(aaa)-1)]
+
+    timeflag = time.time()
+    P_aa = restrict_to_paulis(P,aa)
+    C_aa = diagonalize(P_aa)
+    Q_aa = P_aa.copy()
+    act(Q_aa,C_aa)
+    print(Q_aa.is_IZ())
+    diag_circuit_time += time.time()-timeflag
+
+    timeflag = time.time()
+    U_aa = C_aa.unitary()
+    diag_unitary_time += time.time()-timeflag
+
+    timeflag = time.time()
+    psi_aa = U_aa @ psi
+    diag_psi_time += time.time()-timeflag
+
+    timeflag = time.time()
+    probs = [np.absolute(b)**2 for b in psi_aa]
+    diag_prob_dist_time += time.time()-timeflag
+
+    timeflag = time.time()
+    sample = sample_from_distribution(probs,Q_aa.qubits())
+    for b in range(Q_aa.paulis()):
+        measurement = measurement_outcome(sample,Q_aa.a_pauli(b))
+        pmdict = {1:"+1",-1:"-1"}
+        print(pauli_to_string(P.a_pauli(aa[b])),":",pmdict[measurement])
+    print()
+    diag_sample_time += time.time()-timeflag
+
+diag_circuit_time /= shots
+diag_unitary_time /= shots
+diag_psi_time /= shots
+diag_prob_dist_time /= shots
+diag_sample_time /= shots
 
 
-# aaa = greedy_min_parts(A)
-# # print(aaa)
-# print("Greedy Minimum Parts Algorithm")
-# print("Number of Parts:",len(aaa))
-# print("Cost:",cost(A,aaa,error=error,shots=shots))
-# print()
-
-# aaa = greedy_min_shots(A,error=error,shots=shots)
-# # print(aaa)
-# print("Greedy Minimum Shots Algorithm")
-# print("Number of Parts:",len(aaa))
-# print("Runtime:",time.time()-start)
-# print("Cost:",cost(A,aaa,error=error,shots=shots))
-# print()
-
-# aaa = anneal_min_shots(A,error=error,shots=shots)
-# # print(aaa)
-# print("Anneal Minimum Shots Algorithm")
-# print("Number of Parts:",len(aaa))
-# print("Runtime:",time.time()-start)
-# print("Cost:",cost(A,aaa,error=error,shots=shots))
-# print()
-
-# aaa = greedy_edge_clique_cover(max_covariance_allowed(A,1))
-# # print(aaa)
-# print("Greedy Edge Clique Cover Algorithm")
-# print("Number of Parts:",len(aaa))
-# print("Cost:",cost(A,aaa,error=error,shots=shots))
-# print()
-
-# aaa = maximal_cliques(commutation_graph(P))
-# # print(aaa)
-# # print(aaa)
-# print("Maximal Cliques Algorithm")
-# print("Number of Parts:",len(aaa))
-# # print("Cost:",cost(A,aaa,error=error,shots=shots))
-# start = time.time()
-# print("Cost0:",cost_allow_zero(A,aaa,error=error,shots=shots))
-# print(time.time()-start)
-# start = time.time()
-# print("Costnew:",cost_new(A,aaa,error=error,shots=shots))
-# print(time.time()-start)
-# print()
-
-# aaa = nonempty_cliques(commutation_graph(P))
-# # print(aaa)
-# print("Nonempty Cliques Algorithm")
-# print("Number of Parts:",len(aaa))
-# start = time.time()
-# print("Cost1:",cost(A,aaa,error=error,shots=shots))
-# print(time.time()-start)
-# print()
-# start = time.time()
-# print("Cost2:",cost_old(A,aaa,error=error,shots=shots))
-# print(time.time()-start)
-# print()
+print("Setup time:     ",setup_time)
+print("Pauli to matrix:",pauli_to_matrix_time)
+print("Ground state:   ",ground_state_time)
+print("Variance graph: ",variance_graph_time)
+print("Clique cover:   ",clique_cover_time)
+print("Diag circuit:   ",diag_circuit_time)
+print("Diag unitary:   ",diag_unitary_time)
+print("Diag psi:       ",diag_psi_time)
+print("Diag prob dist: ",diag_prob_dist_time)
+print("Diag sample:    ",diag_sample_time)
 
 
-# probs = np.zeros((p,p))
-# variances = variance_graph(P,constants,psi).adj
-# for a in range(p):
-# 	for b in range(p):
-# 		if a == b:
-# 			probs[a,b] = (Mean(P.a_pauli(a),psi).real+1)/2
-# 		else:
-# 			q = variances[a,b]/4
-# 			probs[a,b] = q
-
-# print(probs)
-
-
-
-# def sample_from_Ham(P):
-# 	no
-
-# def Mean_est(rxo,rx1):
-# 	return (rx0-rx1)/(rx0+rx1+2)
-
-# def Var_est(rx0,rx1):
-# 	return 4*(rx0+1)/(rx0+rx1+2)*(rx1+1)/(rx0+rx1+2)
-
-# def Cov_est(s00,s01,s10,s11,rx0,rx1,ry0,ry1):
-# 	px = (rx0+1)/(rx0+rx1+2)
-# 	py = (ry0+1)/(ry0+ry1+2)
-# 	m0 = min(px*py,(1-px)*(1-py))
-# 	m1 = min(px*(1-py),(1-px)*py)
-# 	t00 = s00/((px)*(py))
-# 	t01 = s01/((px)*(1-py))
-# 	t10 = s10/((1-px)*(py))
-# 	t11 = s11/((1-px)*(1-py))
-# 	q = m0*m1*(t00-t01-t10+t11)/(m0*t00+m1*t01+m1*t10+m0*t11+2)
-# 	return 4*q
-
-
-
-
-# print(Cov_est(s00,s01,s10,s11,rx0,rx1,ry0,ry1))
-
-
-
-error = None
-shots = 50
-p = 7
-q = 4
-d = q
-
-old = 0
-new = 0
-for _ in range(50):
-	P = very_random_Ham(p,q,d)
-	constants = [random.uniform(-1,1) for a in range(p)]
-	m = sum(pauli_to_matrix(P.a_pauli(a))*constants[a] for a in range(p))
-	psi = ground_state(m)
-	A = variance_graph(P,constants,psi)
-	aaa = nonempty_cliques(commutation_graph(P))
-	start = time.time()
-	cost(A,aaa,error=error,shots=shots)
-	old += time.time()-start
-	start = time.time()
-	cost_new(A,aaa,error=error,shots=shots)
-	new += time.time()-start
-print(old)
-print(new)
 

@@ -6,6 +6,7 @@ import itertools
 import random
 import time
 import math
+import functools
 
 # NAMING CONVENTIONS
 
@@ -33,6 +34,8 @@ Z_mat = scipy.sparse.csr_matrix(np.array([[1,0],[0,-1]],dtype=complex))
 H_mat = scipy.sparse.csr_matrix(1/np.sqrt(2)*np.array([[1,1],[1,-1]],dtype=complex))
 S_mat = scipy.sparse.csr_matrix(np.array([[1,0],[0,1j]],dtype=complex))
 one_proj = scipy.sparse.csr_matrix(np.array([[0,0],[0,1]]))
+
+
 
 # GENERAL FUNCTIONS
 
@@ -224,9 +227,9 @@ class circuit:
         return len(self.gg)
 
     def unitary(self):
-        U = scipy.sparse.diags(np.ones(1<<self.dim))
+        U = scipy.sparse.csr_matrix(([1]*(1<<self.dim),(range(1<<self.dim),range(1<<self.dim))))
         for g in self.gg:
-            U = globals()[g.name_string()+'_circuit'](g.aa,self.dim) @ U
+            U = globals()[g.name_string()+'_unitary'](g.aa,self.dim) @ U
         return U
 
     def add_gates(self,gg):
@@ -336,17 +339,17 @@ def SWAP(P,aa):
     Z[:,a0],Z[:,a1] = Z[:,a1].copy(),Z[:,a0].copy()
     return pauli(X,Z)
 
-def H_circuit(aa,dim):
+def H_unitary(aa,dim):
     # Input: aa list of ints; dim int
     # Output: matrix which implements H on qubits a in aa
     return tensor([H_mat if a in aa else I_mat for a in range(dim)])
 
-def S_circuit(aa,dim):
+def S_unitary(aa,dim):
     # Input: aa list of ints; dim int
     # Output: matrix which implements S on qubits a in aa
     return tensor([S_mat if a in aa else I_mat for a in range(dim)])
         
-def CX_circuit(aa,dim):
+def CX_unitary(aa,dim):
     # Input: aa list of two ints; dim int
     # Output: matrix which implements controlled-X with control aa[0] and target aa[1]
     b0 = dim-1-aa[0]
@@ -356,7 +359,7 @@ def CX_circuit(aa,dim):
     bb3 = np.array([(b^((b&(1<<(b0)))>>b0)*(1<<(b1))) for b in range(1<<dim)])
     return scipy.sparse.csr_matrix((bb1,(bb2,bb3)))
 
-def CZ_circuit(aa,dim):
+def CZ_unitary(aa,dim):
     # Input: aa list of two ints; dim int
     # Output: matrix which implements controlled-Z with controls aa[0] and aa[1]
     b0 = dim-1-aa[0]
@@ -366,7 +369,7 @@ def CZ_circuit(aa,dim):
     bb3 = np.array([b for b in range(1<<dim)])
     return scipy.sparse.csr_matrix((bb1,(bb2,bb3)))
 
-def SWAP_circuit(aa,dim):
+def SWAP_unitary(aa,dim):
     # Input: aa list of two ints; dim int
     # Output: matrix which implements SWAP with controls aa[0] and aa[1]
     b0 = dim-1-aa[0]
@@ -410,6 +413,7 @@ def diagonalize_iter(P,C,a):
         act(Q,gate(S,[a]))
 
     return C
+
 
 
 # GRAPHS
@@ -647,6 +651,7 @@ def maximal_cliques(A):
     return list([list(aa) for aa in aaa])
 
 
+
 # PHYSICS FUNCTIONS
 
 def Mean(P,psi):
@@ -746,25 +751,57 @@ def ground_state(m):
     vals,vecs = scipy.sparse.linalg.eigsh(m)
     return vecs[:,np.argmin([e for e in vals])]
 
-def sample_from_distribution(probs,dim):
-    # Input: probs, list of floats
+
+
+# MEASUREMENT FUNCTIONS
+
+def neg(P,g):
+    # Input: P pauli; g gate
+    # Output: bit
+    if g.name == S:
+        return functools.reduce(lambda i,j:i^j,[P.X[0,a] for a in g.aa])
+    return 0
+
+def negations(C,dim):
+    # Input: C circuit; dim int
+    # Output: n bitmask
+    n = 0
+    gg = list(reversed(C.gg))
+    ssdict = {False:'I',True:'Z'}
+    for a in range(dim):
+        P = string_to_pauli(''.join(ssdict[a==b] for b in range(dim-1,-1,-1)))
+        for g in gg:
+            n ^= (1<<a)*neg(P,g)
+            act(P,g)
+    return n
+
+def distribution(Q,C,psi):
+    # Input: Q diagonalized pauli; C circuit; psi vector
+    # Output: cdf for measurements
+    psi_diag = C.unitary() @ psi
+    n = negations(C,Q.qubits())
+    cdf = [0]
+    for b in range(len(psi_diag)):
+        cdf.append(cdf[-1]+np.absolute(psi_diag[b^n])**2)
+    return cdf
+
+def sample_from_distribution(cdf):
+    # Input: cdf, list of floats
     # Output: int, index sampled from distribution
+    l = len(cdf)
+    dim = int(math.log2(l))
     r = random.random()
     s = 0
-    for a in range(len(probs)):
-        s += probs[a]
-        if r < s:
-            return np.array([[a&(1<<(dim-1-b)) for b in range(dim)]],dtype=bool)
-    return np.array([[(len(probs)-1)&(1<<(dim-1-b)) for b in range(dim)]],dtype=bool)
+    a = min(len(cdf)-1,max(np.where([c<r for c in cdf])[0]))
+    return np.array([[a&(l>>(b+1)) for b in range(dim)]],dtype=bool)
 
 def measurement_outcome(sample,Q):
+    # Input: sample bitarray; Q diagaonlized Pauli
+    # Output: measurement
     if Q.paulis() != 1:
         raise Exception("Measurement outcome can only be found for a single Pauli")
     Z = Q.a_pauli(0).Z
     return (-1)**(np.count_nonzero(sample&Z))
-
-
-
 
 
 

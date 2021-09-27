@@ -13,16 +13,16 @@ from Functions import *
 
 
 
-q = 3
+q = 10
 p = 100
 d = q
 
 P = random_Ham(p,q,d)
 constants = [random.uniform(-1,1) for a in range(p)]
 # print_Ham_string(P,constants)
-# print("Paulis:",p)
-# print("Qubits:",q)
-# print()
+print("Paulis:",p)
+print("Qubits:",q)
+print()
 
 m = sum(pauli_to_matrix(P.a_pauli(a))*constants[a] for a in range(p))
 # print(m.toarray())
@@ -40,18 +40,19 @@ aa = aaa[random.randint(0,len(aaa)-1)]
 Q = restrict_to_paulis(P,aa)
 C = diagonalize(Q)
 act(Q,C)
+# Q.print()
 # C.print()
+
 
 cdf = distribution(Q,C,psi)
 # print(cdf)
+# print([cdf[i+1]-cdf[i] for i in range(1<<q)])
+
 
 sample = sample_from_distribution(cdf)
 for b in range(Q.paulis()):
     measurement = measurement_outcome(sample,Q.a_pauli(b))
-    # print(pauli_to_string(P.a_pauli(aa[b])),":",{1:"+1",-1:"-1"}[measurement])
-
-
-
+    print(pauli_to_string(P.a_pauli(aa[b])),":",{1:"+1",-1:"-1"}[measurement])
 
 
 

@@ -385,7 +385,8 @@ def diagonalize(P):
     for a in range(Q.qubits()):
         C = diagonalize_iter(Q,C,a)
     act(Q,C)
-    C.add_gates(gate(H,[a for a in range(Q.qubits()) if any(Q.X[:,a])]))
+    if [a for a in range(Q.qubits()) if any(Q.X[:,a])]:
+        C.add_gates(gate(H,[a for a in range(Q.qubits()) if any(Q.X[:,a])]))
     return C
  
 def diagonalize_iter(P,C,a):
@@ -748,8 +749,8 @@ def print_Ham_string(P,constants):
 def ground_state(m):
     # Input: m scipy.sparse matrix
     # Output: eigenvector corresponding to lowest eigenvalue
-    vals,vecs = scipy.sparse.linalg.eigsh(m)
-    return vecs[:,np.argmin([e for e in vals])]
+    gval,gvec = scipy.sparse.linalg.eigsh(m,which='SA',k=1)
+    return np.array([g for g in gvec[:,0]])
 
 
 
@@ -759,7 +760,12 @@ def neg(P,g):
     # Input: P pauli; g gate
     # Output: bit
     if g.name == S:
-        return functools.reduce(lambda i,j:i^j,[P.X[0,a] for a in g.aa])
+        return functools.reduce(lambda i,j:i^j,[(P.X[0,a])&(not P.Z[0,a]) for a in g.aa])
+    elif g.name == H:
+        return functools.reduce(lambda i,j:i^j,[(P.X[0,a])&(P.Z[0,a]) for a in g.aa])
+    elif g.name == CX:
+        a0,a1 = g.aa[0],g.aa[1]
+        return (P.X[0,a0])&(not P.Z[0,a0])&(not P.X[0,a1])&P.Z[0,a1] | (P.X[0,a0])&(P.Z[0,a0])&(P.X[0,a1])&(P.Z[0,a1])
     return 0
 
 def negations(C,dim):
@@ -790,9 +796,9 @@ def sample_from_distribution(cdf):
     # Output: int, index sampled from distribution
     l = len(cdf)
     dim = int(math.log2(l))
-    r = random.random()
+    r = random.uniform(0,cdf[-1])
     s = 0
-    a = min(len(cdf)-1,max(np.where([c<r for c in cdf])[0]))
+    a = min(len(cdf)-1,max(np.where([c<=r for c in cdf])[0]))
     return np.array([[a&(l>>(b+1)) for b in range(dim)]],dtype=bool)
 
 def measurement_outcome(sample,Q):

@@ -33,7 +33,6 @@ Y_mat = scipy.sparse.csr_matrix(np.array([[0,-1j],[1j,0]],dtype=complex))
 Z_mat = scipy.sparse.csr_matrix(np.array([[1,0],[0,-1]],dtype=complex))
 H_mat = scipy.sparse.csr_matrix(1/np.sqrt(2)*np.array([[1,1],[1,-1]],dtype=complex))
 S_mat = scipy.sparse.csr_matrix(np.array([[1,0],[0,1j]],dtype=complex))
-one_proj = scipy.sparse.csr_matrix(np.array([[0,0],[0,1]]))
 
 
 
@@ -401,11 +400,10 @@ def diagonalize_iter(P,C,a):
         C.add_gates([gate(CX,[a,c]) for c in range(a+1,Q.qubits()) if X[b,c]])
         act(Q,[gate(CX,[a,c]) for c in range(a+1,Q.qubits()) if X[b,c]])
 
-    if not Z[b,a]:
-        C.add_gates(gate(S,[a]))
-        act(Q,gate(S,[a]))
-
     if any((c!=a)&(X[b,c]|Z[b,c]) for c in range(a+1,Q.qubits())):
+        if not Z[b,a]:
+            C.add_gates(gate(S,[a]))
+            act(Q,gate(S,[a]))
         C.add_gates([gate(CX,[c,a]) for c in range(a+1,Q.qubits()) if (c!=a)&(X[b,c]|Z[b,c])])
         act(Q,[gate(CX,[c,a]) for c in range(a+1,Q.qubits()) if (c!=a)&(X[b,c]|Z[b,c])])
 
@@ -756,63 +754,56 @@ def ground_state(m):
 
 # MEASUREMENT FUNCTIONS
 
-def neg(P,g):
+def neg(P,C):
+    # Input: C circuit; dim int
+    # Output: n bitmask
+    Q = P.copy()
+    n = 0
+    for g in C.gg:
+        n ^= neg_iter(Q,g)
+        act(Q,g)
+    return n
+
+def neg_iter(P,g):
     # Input: P pauli; g gate
     # Output: bit
     if g.name == S:
-        return functools.reduce(lambda i,j:i^j,[(P.X[0,a])&(not P.Z[0,a]) for a in g.aa])
+        return functools.reduce(lambda i,j:i^j,[(P.X[0,a])&(P.Z[0,a]) for a in g.aa])
     elif g.name == H:
         return functools.reduce(lambda i,j:i^j,[(P.X[0,a])&(P.Z[0,a]) for a in g.aa])
     elif g.name == CX:
         a0,a1 = g.aa[0],g.aa[1]
-        return (P.X[0,a0])&(not P.Z[0,a0])&(not P.X[0,a1])&P.Z[0,a1] | (P.X[0,a0])&(P.Z[0,a0])&(P.X[0,a1])&(P.Z[0,a1])
+        return (P.X[0,a0])&(P.Z[0,a1])&(P.Z[0,a0] == P.X[0,a1])
     return 0
 
-def negations(C,dim):
-    # Input: C circuit; dim int
-    # Output: n bitmask
-    n = 0
-    gg = list(reversed(C.gg))
-    ssdict = {False:'I',True:'Z'}
-    for a in range(dim):
-        P = string_to_pauli(''.join(ssdict[a==b] for b in range(dim-1,-1,-1)))
-        for g in gg:
-            n ^= (1<<a)*neg(P,g)
-            act(P,g)
-    return n
-
-def distribution(Q,C,psi):
-    # Input: Q diagonalized pauli; C circuit; psi vector
+def distribution(C,psi):
+    # Input: C circuit; psi vector
     # Output: cdf for measurements
     psi_diag = C.unitary() @ psi
-    n = negations(C,Q.qubits())
     cdf = [0]
     for b in range(len(psi_diag)):
-        cdf.append(cdf[-1]+np.absolute(psi_diag[b^n])**2)
+        cdf.append(cdf[-1]+np.absolute(psi_diag[b])**2)
     return cdf
 
 def sample_from_distribution(cdf):
-    # Input: cdf, list of floats
-    # Output: int, index sampled from distribution
+    # Input: cdf list of floats
+    # Output: int index sampled from distribution
     l = len(cdf)
     dim = int(math.log2(l))
     r = random.uniform(0,cdf[-1])
     s = 0
-    a = min(len(cdf)-1,max(np.where([c<=r for c in cdf])[0]))
+    a = max(np.where([c<=r for c in cdf])[0])
     return np.array([[a&(l>>(b+1)) for b in range(dim)]],dtype=bool)
 
-def measurement_outcome(sample,Q):
-    # Input: sample bitarray; Q diagaonlized Pauli
+def measurement_outcome(sample,P,C):
+    # Input: sample bitarray; P Pauli; C Circuit
     # Output: measurement
+    Q = P.copy()
+    act(Q,C)
     if Q.paulis() != 1:
         raise Exception("Measurement outcome can only be found for a single Pauli")
     Z = Q.a_pauli(0).Z
-    return (-1)**(np.count_nonzero(sample&Z))
-
-
-
-
-
+    return (-1)**(neg(P,C)^functools.reduce(lambda i,j:i^j,(sample&Z)[0,:]))
 
 
 

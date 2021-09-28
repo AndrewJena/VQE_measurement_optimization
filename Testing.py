@@ -58,7 +58,7 @@ cdf = distribution(C,psi)
 
 sample = sample_from_distribution(cdf)
 for b in range(Q.paulis()):
-    measurement = measurement_outcome(sample,P.a_pauli(b),C)
+    measurement = measurement_outcome(sample,P.a_pauli(aa[b]),C)
     print(pauli_to_string(P.a_pauli(aa[b])),":",{1:"+1",-1:"-1"}[measurement])
 print()
 

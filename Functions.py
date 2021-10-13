@@ -7,6 +7,14 @@ import random
 import time
 import math
 import functools
+import re
+import os
+import networkx as nx
+from scipy import ndimage
+# import sys
+# sys.setrecursionlimit(40)
+
+
 
 # NAMING CONVENTIONS
 
@@ -478,16 +486,32 @@ class graph:
     def print(self):
         # Input: A graph
             # Print adjacency matrix of graph
-        print(self.adj)
+        for a in range(self.ord()):
+            print('[',end=' ')
+            for b in range(self.ord()):
+                s = self.adj[a,b]
+                if str(s)[0] == '-':
+                    print(f'{self.adj[a,b]:.4f}',end=" ")
+                else:
+                    print(' '+f'{self.adj[a,b]:.4f}',end=" ")
+            print(']')
 
     def print_neighbors(self):
         # Input: A graph
             # Print vertex: neighbors view of graph
-        for v in range(A.ord()):
+        for v in range(self.ord()):
             print(v,end=": ")
-            for w in A.neighbors(v):
+            for w in self.neighbors(v):
                 print(w,end=" ")
             print()
+
+    def copy(self):
+        B = graph()
+        for v in range(len(self.adj)):
+            B.add_vertex(self.adj[v,v])
+        for v1,v2 in zip(range(len(self.adj)),range(len(self.adj))):
+            B.lade_edge(v1,v2,self.adj[v1,v2])
+        return B
 
 
 def greedy_min_parts(A):
@@ -512,111 +536,6 @@ def greedy_min_parts(A):
             aaa.append([bb[c]])
     return aaa
 
-def greedy_min_shots(A,error=None,shots=None):
-    # Input: A graph
-    # Output: list of lists of Ints (the partition into cliques)
-        # Greedy algorithm with random vertex ordering
-        # Sorting vertices may improve algorithm, but only slightly
-    p = A.ord()
-    fewest_shots = cost(A,[[a] for a in range(p)],error=error,shots=shots)
-    aaa = []
-    bb = [b for b in range(p)]
-    random.shuffle(bb)
-    for c in range(p):
-        flag = False
-        min_part = []
-        for d in range(len(aaa)):
-            aa = aaa[d]
-            dd = aa+[bb[c]]
-            if A.clique(dd):
-                ddd = aaa.copy()
-                ddd[d] = dd
-                s = cost(A,ddd+[[bb[e]] for e in range(c+1,p)],error=error,shots=shots)
-                if s < fewest_shots:
-                    fewest_shots = s
-                    min_part = aa
-                    flag = True
-        if flag:
-            aaa.remove(min_part)
-            aaa.append(min_part+[bb[c]])
-        else:
-            aaa.append([bb[c]])
-    return aaa
-
-def anneal_min_shots(A,error=None,shots=None):
-    # Input: A graph
-    # Output: list of lists of Ints (the partition into cliques)
-        # Deterministic annealing-type algorithm, where cliques are merged at each step
-    aaa = [[a] for a in range(A.ord())]
-    fewest_shots = cost(A,aaa,error=error,shots=shots)
-    flag = True
-    while flag:
-        flag = False
-        aaa_new = aaa.copy()
-        for aa1,aa2 in itertools.combinations(aaa,2):
-            bb = aa1+aa2
-            if A.clique(bb):
-                bbb = aaa.copy()
-                bbb.remove(aa1)
-                bbb.remove(aa2)
-                bbb.append(bb)
-                s = cost(A,bbb,error=error,shots=shots)
-                if s < fewest_shots:
-                    fewest_shots = s
-                    aaa_new = bbb
-                    flag = True
-        if flag:
-            aaa = aaa_new
-    return aaa
-
-def exhaust_min_shots(A,error=None,shots=None):
-    # Input: A graph
-    # Output: list of lists of Ints (the partition into cliques)
-        # Just initializes (and returns output of) recursive algorithm
-        # Exhaustively searches through all possible partitions to find optimal
-    aaa = [[a] for a in range(A.ord())]
-    fewest_shots = cost(A,aaa,error=error,shots=shots)
-    best_partition = aaa
-    return exhaust_min_shots_rec(A,aaa,fewest_shots,best_partition,error=error,shots=shots)[1]
-
-def exhaust_min_shots_rec(A,aaa,fewest_shots,best_partition,error=None,shots=None):
-    # Input: A graph; aaa list of lists of Ints; fewest_shots real; best_partition list of lists of Ints
-    # Output: fewest_shots and best_partition
-        # Recursively iterates through all possible partitions and outputs optimal partition and number of shots
-    s = cost(A,aaa,error=error,shots=shots)
-    if fewest_shots-s > 2**(-63):
-        fewest_shots = s
-        best_partition = aaa
-    for aa1,aa2 in itertools.combinations(aaa,2):
-        bb = aa1+aa2
-        if A.clique(bb):
-            bbb = aaa.copy()
-            bbb.remove(aa1)
-            bbb.remove(aa2)
-            bbb.append(bb)
-            s,ccc = exhaust_min_shots_rec(A,bbb,fewest_shots,best_partition,error=error,shots=shots)
-            if s < fewest_shots:
-                fewest_shots = s
-                best_partition = ccc
-    return fewest_shots,best_partition
-
-def greedy_edge_clique_cover(A):
-    # ANNEAL IS WORSE THAN GREEDY (BOTH TIME AND NUMBER OF CLIQUES)
-    p = A.ord()
-    aaa = [[v] for v in range(p) if A.degree(v) == 1]
-    remaining_edges = set([frozenset(vs) for vs in itertools.combinations(range(p),2) if A.clique(vs)])
-    while remaining_edges:
-        aa = remaining_edges.pop()
-        remaining_vertices = set(range(p))-aa
-        for v in remaining_vertices:
-            bb = aa|set([v])
-            if A.clique(bb) and any(frozenset([a,v]) in remaining_edges for a in aa):
-                aa = bb
-        aaa.append(list(aa))
-        for v1,v2 in itertools.combinations(aa,2):
-            remaining_edges.discard(frozenset([v1,v2]))
-    return aaa
-
 def remove_subsets(aaa):
     # remove subsets from a list of sets
     bbb = set([])
@@ -639,15 +558,23 @@ def nonempty_cliques(A):
     return list([list(aa) for aa in aaa])
 
 def maximal_cliques(A):
-    # return all maximal cliques of A
+    G = nx.Graph()
+    G.add_nodes_from([a for a in range(A.ord())])
+    G.add_edges_from([(a,b) for a in range(A.ord()) for b in A.neighbors(a)])
+    return nx.algorithms.clique.find_cliques(G)
+
+def covering_maximal_cliques(A,k):
     p = A.ord()
-    aaa = set([frozenset([0])])
-    for a in range(1,p):
-        aset = set([a])
-        inter = A.neighbors(a)&set(range(a))
-        aaa |= set([frozenset(aset|(inter&aa)) for aa in aaa])
-        aaa = remove_subsets(aaa)
-    return list([list(aa) for aa in aaa])
+    aaa = []
+    for b in range(p):
+        for _ in range(k):
+            cc = [b]
+            while set.intersection(*[A.neighbors(c) for c in cc]):
+                cc += random.sample(set.intersection(*[A.neighbors(c) for c in cc]),1)
+            aaa.append(cc)
+    return aaa
+
+
 
 
 
@@ -744,11 +671,13 @@ def print_Ham_string(P,constants):
         else:
             print(" %s"%constants[a])
 
-def ground_state(m):
-    # Input: m scipy.sparse matrix
+def ground_state(P,constants):
+    # Input: P pauli
     # Output: eigenvector corresponding to lowest eigenvalue
+    m = sum(pauli_to_matrix(P.a_pauli(a))*constants[a] for a in range(P.paulis()))
     gval,gvec = scipy.sparse.linalg.eigsh(m,which='SA',k=1)
     return np.array([g for g in gvec[:,0]])
+
 
 
 
@@ -805,5 +734,278 @@ def measurement_outcome(sample,P,C):
     Z = Q.a_pauli(0).Z
     return (-1)**(neg(P,C)^functools.reduce(lambda i,j:i^j,(sample&Z)[0,:]))
 
+def measure(P,psi,aa):
+    Q = restrict_to_paulis(P,aa)
+    C = diagonalize(Q)
+    act(Q,C)
+    cdf = distribution(C,psi)
+    sample = sample_from_distribution(cdf)
+    return [measurement_outcome(sample,P.a_pauli(aa[b]),C) for b in range(len(aa))]
+
+def clique_to_measure(V,aaa):
+    retmax = 0
+    for aa in aaa:
+        aamax = V[aa][:,aa].sum()
+        if aamax > retmax:
+            ret = aa
+            retmax = aamax
+    return ret
+
+def greedy_bayes_min_var(P,constants,psi,aaa,shots):
+    p = P.paulis()
+    X = np.empty((p,p),dtype=object)
+    for a,b in itertools.product(range(p),repeat=2):
+        X[a,b] = ([],[])
+    printProgressBar(progress_scaling(0),progress_scaling(shots))
+    for b in range(shots):
+        aaa,aaa1 = itertools.tee(aaa,2)
+        aa = clique_to_measure(ready_to_measure_bvg(P,X,constants),aaa1)
+        mm = measure(P,psi,aa)
+        for (a0,m0),(a1,m1) in itertools.product(zip(aa,mm),repeat=2):
+            X[a0,a1][0].append(m0)
+            X[a0,a1][1].append(m1)
+        printProgressBar(progress_scaling(b+1),progress_scaling(shots))
+    return X
+
+def scale_variances(A,X):
+    p = A.ord()
+    S0 = np.array([[len(X[a,b][0]) for b in range(p)] for a in range(p)],dtype=int)
+    S1 = np.array([[S0[a,b]/(S0[a,a]*S0[b,b]) if S0[a,b]>0 else 0 for b in range(p)] for a in range(p)])
+    B = A.copy()
+    for a0,a1 in itertools.product(range(A.ord()),range(A.ord())):
+        if S0[a0,a1] > 0:
+            B.adj[a0,a1] *= S1[a0,a1]
+    return B
+
+def sample_Mean(xx):
+    # return sample mean of outcomes xx
+    if len(xx) == 0:
+        return 0
+    return sum(xx)/len(xx)
+
+def sample_Var(xx,Mx):
+    # return sample variance of outomces xx with mean Mxx
+    if len(xx) == 0:
+        return 1
+    elif len(xx) == 1:
+        return 0
+    return sum((x-Mx)**2 for x in xx)/(len(xx)-1)
+
+def sample_Cov(xx,yy,Mx,My):
+    # return sample covariance of outcomes xx,yy with means Mxx,Myy
+    if len(xx) <= 1:
+        return 0
+    return sum((x-Mx)*(y-My) for (x,y) in zip(xx,yy))/(len(xx)-1)
+
+def sample_variance_graph(P,X,constants):
+    # return sample variance graph
+    p = P.paulis()
+    MM = [sample_Mean(X[a,a][0]) for a in range(p)]
+    S = np.array([[len(X[a,b][0]) for b in range(p)] for a in range(p)],dtype=int)
+    V = np.zeros((p,p),dtype=float)
+    for a in range(p):
+        if S[a,a] > 0:
+            V[a,a] = constants[a]*constants[a]*sample_Var(X[a,a][0],sample_Mean(X[a,a][0]))
+        else:
+            V[a,a] = constants[a]*constants[a]
+    for a in range(p):
+        for b in range(a+1,p):
+            if S[a,b] > 0:
+                Cab = sample_Cov(X[a,b][0],X[a,b][1],MM[a],MM[b])
+                V[a,b] = constants[a]*constants[b]*Cab
+                V[b,a] = constants[a]*constants[b]*Cab
+            else:
+                V[a,b] = 0
+                V[b,a] = 0
+    return graph(V)
 
 
+
+
+def bayes_Prob(xx):
+    # return Bayesian probability of xx
+    x0 = xx.count(1)
+    x1 = xx.count(-1)
+    return (x0+1)/(x0+x1+2)
+
+def bayes_Mean(xx):
+    # return Bayesian mean of xx
+    # x0 = xx.count(1)
+    # x1 = xx.count(-1)
+    # return (x0-x1)/(x0+x1+2)
+    n = xx.count(1)-xx.count(-1)
+    d = len(xx)+2
+    return n/d
+
+def bayes_Var(xx,Mx):
+    # return Bayesian variance of xx with mean Mxx
+    # x0 = xx.count(1)
+    # x1 = xx.count(-1)
+    # return 4*(x0+1)/(x0+x1+2)*(x1+1)/(x0+x1+2)
+    n = ((xx.count(1)+1)*(xx.count(-1)+1))<<2
+    d = (len(xx)+2)**2
+    return n/d
+
+def bayes_Cov(xx,yy,Px,Py):
+    # return Bayesian covariance of xx,yy with means Mxx,Myy
+    xxx = [(x,y) for x,y in zip(xx,yy)]
+    # x00 = xxx.count((1,1))
+    # x01 = xxx.count((1,-1))
+    # x10 = xxx.count((-1,1))
+    # x11 = xxx.count((-1,-1))
+    # p00 = Px*Py
+    # p01 = Px*(1-Py)
+    # p10 = (1-Px)*Py
+    # p11 = (1-Px)*(1-Py)
+    # return (x00-x01-x10+x11)/(x00+x01+x10+x11) - (p00-p01-p10+p11)
+    n = (xxx.count((1,1)) + xxx.count((-1,-1))) - (xxx.count((1,-1)) + xxx.count((-1,1)))
+    d = len(xx)
+    p = (Px*Py + (1-Px)*(1-Py)) - (Px*(1-Py) + (1-Px)*Py)
+    return n/d-p
+    # n = (((xxx.count((1,1))+1)*(xxx.count((-1,-1))+1)) - ((xxx.count((1,-1))+1)*(xxx.count((-1,1))+1)))<<2
+    # d = (len(xx)+2)**2
+    # return n/d
+
+def bayes_variance_graph(P,X,constants):
+    # return Bayesian variance graph
+    p = P.paulis()
+    PP = [bayes_Prob(X[a,a][0]) for a in range(p)]
+    V = np.zeros((p,p),dtype=float)
+    for a in range(p):
+        if len(X[a,a][0]) > 0:
+            V[a,a] = (constants[a]**2)*bayes_Var(X[a,a][0],bayes_Mean(X[a,a][0]))
+        else:
+            V[a,a] = (constants[a]**2)
+    for a0,a1 in itertools.combinations(range(p),2):
+        if len(X[a0,a1][0]) > 0:
+            V01 = constants[a0]*constants[a1]*bayes_Cov(X[a0,a1][0],X[a0,a1][1],PP[a0],PP[a1])
+            V[a0,a1] = V01
+            V[a1,a0] = V01
+        else:
+            V[a0,a1] = 0
+            V[a1,a0] = 0
+    return graph(V)
+
+def ready_to_measure_bvg(P,X,constants):
+    # return Bayesian variance graph
+    p = P.paulis()
+    PP = [bayes_Prob(X[a,a][0]) for a in range(p)]
+    S0 = np.array([[len(X[a,b][0]) for b in range(p)] for a in range(p)],dtype=int)
+    S1 = np.array([[((S0[a,b])/(S0[a,a]*S0[b,b])-(S0[a,b]+1)/((S0[a,a]+1)*(S0[b,b]+1))) if S0[a,b]>0 else 0 for b in range(p)] for a in range(p)])
+    V = np.zeros((p,p),dtype=float)
+    for a in range(p):
+        if S0[a,a] > 0:
+            V[a,a] = (constants[a]**2)*bayes_Var(X[a,a][0],bayes_Mean(X[a,a][0]))*S1[a,a]
+        else:
+            V[a,a] = constants[a]**2
+    for a0,a1 in itertools.combinations(range(p),2):
+        if S0[a0,a1] > 0:
+            V01 = constants[a0]*constants[a1]*bayes_Cov(X[a0,a1][0],X[a0,a1][1],PP[a0],PP[a1])*S1[a0,a1]
+            V[a0,a1] = V01
+            V[a1,a0] = V01
+        else:
+            V[a0,a1] = 0
+            V[a1,a0] = 0
+    return V
+
+
+
+
+
+def progress_scaling(a):
+    # Scales the progress bar appropriately
+    return math.floor(a**(4/3))
+
+def printProgressBar (iteration,total,length=100):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration - Required : current iteration (Int)
+        total     - Required : total iterations (Int)
+        length    - Optional : character length of bar (Int)
+    """
+    percent = ("{0:.1f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = '█' * filledLength + '-' * (length - filledLength)
+    print(f' |{bar}| {percent}%', end="\r")
+    # Print New Line on Complete
+    if iteration == total: 
+        print(" "*(length+10),end="\r")
+
+
+
+
+# Read Hamiltonians
+
+def read_Hamiltonian(path):
+    f = open(path,"r")
+    ll = f.readlines()
+    f.close()
+    p = len(ll)//2
+    q = len(ll[0])-1
+    sss = []
+    constants = []
+    for a in range(0,len(ll),2):
+        sss.append(ll[a][0:-1])
+        constants.append(float(ll[a+1][1:-5]))
+    return p,q,string_to_pauli(sss),constants
+
+def write_maximal_cliques(path,aaa):
+    f = open(path,"w")
+    ll = ""
+    for aa in aaa:
+        l = ""
+        for a in aa:
+            l += (str(a)+" ")
+        l = l[:-1]
+        ll += (l+"\n")
+    ll = ll[:-1]
+    f.write(ll)
+    f.close()
+
+def read_maximal_cliques(path):
+    f = open(path,"r")
+    ll = f.readlines()
+    f.close()
+    aaa = []
+    for l in ll:
+        aaa.append([int(s) for s in l.split(" ")])
+    return aaa
+
+def write_ground_state(path,psi):
+    ss = list(psi[a] for a in range(len(psi)))
+    f = open(path,"w")
+    for s in ss[:-1]:
+        f.write(str(s)+" ")
+    f.write(str(ss[-1]))
+    f.close()
+
+def read_ground_state(path):
+    f = open(path,"r")
+    ll = f.readlines()
+    f.close()
+    psi = []
+    for l in ll:
+        psi.append([np.complex(s) for s in l.split(" ")])
+    return np.array(*psi)
+
+def write_variance_graph(path,A):
+    sss = list(list(A.adj[a1,a0] for a0 in range(A.ord())) for a1 in range(A.ord()))
+    f = open(path,"w")
+    for ss in sss[:-1]:
+        for s in ss[:-1]:
+            f.write(str(s)+" ")
+        f.write(str(ss[-1])+"\n")
+    for s in sss[-1][:-1]:
+        f.write(str(s)+" ")
+    f.write(str(sss[-1][-1]))
+    f.close()
+
+def read_variance_graph(path):
+    f = open(path,"r")
+    ll = f.readlines()
+    f.close()
+    adj_mat = []
+    for l in ll:
+        adj_mat.append([float(s) for s in l.split(" ")])
+    return graph(np.array(adj_mat))

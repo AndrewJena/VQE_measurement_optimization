@@ -12,7 +12,7 @@ import networkx as nx
 
 
 
-# NAMING CONVENTIONS
+# CODE CONVENTIONS
 
 # a - int
 # aa - list{int}

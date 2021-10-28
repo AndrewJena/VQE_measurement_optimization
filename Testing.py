@@ -27,18 +27,20 @@ from Functions import *
 
 # number of times to run each Hamiltonian
 runs = 1
+
 # number of shots to take in each simulation
 shots = 1000
+
 # when should variance graph update for better measurement allocations?
 #     if step size = shots, the variance graph will never update
-update_var = set(range(0,shots,shots))
+update_var = set(range(0,shots,1))
 
-part_func = LDF
+# part_func = LDF
 # part_func = vertex_covering_maximal_cliques
-# part_func = all_maximal_cliques
+part_func = all_maximal_cliques
 print(part_func.__name__)
 
-for name in ["8qubits_H2","12qubits_LiH","14qubits_BeH2","14qubits_H2O","16qubits_NH3","20qubits_C2","20qubits_HCl"]:
+for name in ["4qubits_H2","8qubits_H2","12qubits_LiH","14qubits_BeH2","14qubits_H2O","16qubits_NH3","20qubits_C2","20qubits_HCl"]:
     for form in ["bk","jw","parity",]:
         print()
         print(name,form)

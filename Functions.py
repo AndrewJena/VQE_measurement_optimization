@@ -9,10 +9,12 @@ import math
 import functools
 import os
 import networkx as nx
+from functools import reduce
+from operator import mul
 
 
 
-# CODE CONVENTIONS
+# NAMING CONVENTIONS
 
 # a - int
 # aa - list{int}
@@ -22,7 +24,7 @@ import networkx as nx
 # r - random
 # i - indexing
 # ss - str
-# m - scipy.sparse.csr_matrix
+# m - matrix (numpy.array or scipy.sparse.csr_matrix)
 # P - Pauli
 # C - circuit
 # G - gate
@@ -59,23 +61,21 @@ def read_Hamiltonian(path):
     #     (pauli)       - set of Paulis in Hamiltonian
     #     (list{float}) - coefficients in Hamiltonian
     f = open(path,"r")
-    ll = f.readlines()
+    sss0 = f.readlines()
     f.close()
-    p = len(ll)//2
-    q = len(ll[0])-1
-    sss = []
-    constants = []
-    for a in range(0,len(ll),2):
-        sss.append(ll[a][0:-1])
-        constants.append(float(ll[a+1][1:-5]))
-    return p,q,string_to_pauli(sss),constants
+    sss1 = []
+    cc = []
+    for i in range(0,len(sss0),2):
+        sss1.append(sss0[i][0:-1])
+        cc.append(float(sss0[i+1][1:-5]))
+    return string_to_pauli(sss1),cc
 
 # write the ground state to a file for easy lookup
 def write_ground_state(path,psi):
     # Inputs:
     #     path - (str)         - path to desired ground state file
     #     psi  - (numpy.array) - ground state of Hamiltonian
-    ss = list(psi[a] for a in range(len(psi)))
+    ss = list(psi[i] for i in range(len(psi)))
     f = open(path,"w")
     for s in ss[:-1]:
         f.write(str(s)+" ")
@@ -89,11 +89,11 @@ def read_ground_state(path):
     # Outputs:
     #     (numpy.array) - ground state of Hamiltonian
     f = open(path,"r")
-    ll = f.readlines()
+    sss = f.readlines()
     f.close()
     psi = []
-    for l in ll:
-        psi.append([np.complex(s) for s in l.split(" ")])
+    for ss in sss:
+        psi.append([np.complex(ss1) for ss1 in ss.split(" ")])
     return np.array(*psi)
 
 # write the true variance graph to a file for easy lookup
@@ -101,7 +101,7 @@ def write_variance_graph(path,A):
     # Inputs:
     #     path - (str)   - path to desired variance graph file
     #     A    - (graph) - variance graph of Hamiltonian
-    sss = list(list(str(A.adj[a0,a1]) for a1 in range(A.ord())) for a0 in range(A.ord()))
+    sss = list(list(str(A.adj[i0,i1]) for i1 in range(A.ord())) for i0 in range(A.ord()))
     f = open(path,"w")
     for ss in sss[:-1]:
         for s in ss[:-1]:
@@ -119,27 +119,31 @@ def read_variance_graph(path):
     # Outputs:
     #     (graph) - variance graph of Hamiltonian
     f = open(path,"r")
-    ll = f.readlines()
+    sss = f.readlines()
     f.close()
-    adj_mat = []
-    for l in ll:
-        adj_mat.append([float(s) for s in l.split(" ")])
-    return graph(np.array(adj_mat))
+    m = []
+    for ss in sss:
+        m.append([float(ss1) for ss1 in ss.split(" ")])
+    return graph(np.array(m))
 
 # call within a loop to produce a loading bar which can be scaled for various timings
-def loading_bar(a0,a1,length=50,scaling=lambda x : x):
+def loading_bar(runs,length=50,scalings=[]):
     # Inputs:
-    #     a0      - (int)      - current iteration
-    #     a1      - (int)      - total iterations
-    #     length  - (int)      - length of bar
-    #     scaling - (function) - normalize speed of progress
-    a2,a3 = scaling(a0),scaling(a1)
-    ss = ("{0:.1f}").format(100*a2/a3)
-    a4 = int(length*a2/a3)
-    bar = '█'*a4 + '-'*(length-a4)
-    print(f' |{bar}| {ss}% {a0}/{a1}', end="\r")
-    if a0 == a1: 
-        print(" "*(length+12+2*len(str(a1))),end="\r")
+    #     runs    - (list{tuple{int}}) - list of pairs: current iteration, total iterations
+    #     length  - (int)              - length of bar
+    #     scaling - (list{function})   - scale speed of progress
+    a0 = len(runs)
+    scalings += [lambda x:x]*(a0-len(scalings))
+    a1 = scalings[0](runs[0][0])+sum(scalings[i](runs[i][0])*scalings[i-1](runs[i-1][1]) for i in range(1,a0))
+    a2 = reduce(mul,[scalings[i](runs[i][1]) for i in range(a0)])
+    # for scale in scalings[::-1]:
+    #     a1,a2 = scale(a1),scale(a2)
+    ss0 = ("{0:.1f}").format(int(1000*a1/a2)/10)
+    ss1 = ' '.join(str(runs[i][0])+'/'+str(runs[i][1]) for i in range(a0))
+    bar = '█'*int(length*a1/a2) + '-'*(length-int(length*a1/a2))
+    print(f' |{bar}| {ss0}% {ss1}', end="\r")
+    if runs[0][0] >= runs[0][1]-1: 
+        print(" "*(length+6+len(ss0)+len(ss1)),end="\r")
 
 
 
@@ -160,33 +164,29 @@ class pauli:
     def is_IX(self):
         # Outputs:
         #     (bool) - True if self has only X componenet, False otherwise
-        if np.any(self.Z):
-            return False
-        return True
+        return not np.any(self.Z)
 
     # check whether self has only Z component 
     def is_IZ(self):
         # Outputs:
         #     (bool) - True if self has only Z componenet, False otherwise
-        if np.any(self.X):
-            return False
-        return True
+        return not np.any(self.X)
 
     # check whether the set of Paulis are pairwise commuting
     def is_commuting(self):
         # Outputs:
         #     (bool) - True if self is pairwise commuting set of Paulis
         p = self.paulis()
-        PP = [self.a_pauli(a) for a in range(p)]
-        return not any(symplectic_inner_product(PP[a0],PP[a1]) for a0,a1 in itertools.combinations(range(p),2))
+        PP = [self.a_pauli(i) for i in range(p)]
+        return not any(symplectic_inner_product(PP[i0],PP[i1]) for i0,i1 in itertools.combinations(range(p),2))
 
     # check whether the set of Paulis are pairwise commuting on every qubit
     def is_qubitwise_commuting(self):
         # Outputs:
         #     (bool) - True if self is pairwise qubitwise commuting set of Paulis
         p = self.paulis()
-        PP = [self.a_pauli(a) for a in range(p)]
-        return not any(any((PP[a0].X[0,a2]&PP[a1].Z[0,a2])^(PP[a0].Z[0,a2]&PP[a1].X[0,a2]) for a2 in range(self.qubits())) for a0,a1 in itertools.combinations(range(p),2))
+        PP = [self.a_pauli(i) for i in range(p)]
+        return not any(any((PP[i0].X[0,i2]&PP[i1].Z[0,i2])^(PP[i0].Z[0,i2]&PP[i1].X[0,i2]) for i2 in range(self.qubits())) for i0,i1 in itertools.combinations(range(p),2))
 
     # pull out the ath Pauli from self
     def a_pauli(self,a):
@@ -217,6 +217,7 @@ class pauli:
             for a in sorted(aa,reverse=True):
                 self.X = np.delete(self.X,a,axis=0)
                 self.Z = np.delete(self.Z,a,axis=0)
+        return self
 
     # return self after deletion of qubits indexed by aa
     def delete_qubits_(self,aa):
@@ -233,8 +234,8 @@ class pauli:
     # return deep copy of self
     def copy(self):
         # Outputs: (pauli)
-        X = np.array([[self.X[a0,a1] for a1 in range(self.qubits())] for a0 in range(self.paulis())],dtype=bool)
-        Z = np.array([[self.Z[a0,a1] for a1 in range(self.qubits())] for a0 in range(self.paulis())],dtype=bool)
+        X = np.array([[self.X[i0,i1] for i1 in range(self.qubits())] for i0 in range(self.paulis())],dtype=bool)
+        Z = np.array([[self.Z[i0,i1] for i1 in range(self.qubits())] for i0 in range(self.paulis())],dtype=bool)
         return pauli(X,Z)
 
     # print string representation of self
@@ -248,8 +249,8 @@ class pauli:
 
     # print symplectic representation of self
     def print_symplectic(self):
-        for a in range(self.paulis()):
-            print(''.join(str(int(a1)) for a1 in self.X[a,:]),''.join(str(int(a1)) for a1 in self.Z[a,:]))
+        for i in range(self.paulis()):
+            print(''.join(str(int(i1)) for i1 in self.X[i,:]),''.join(str(int(i1)) for i1 in self.Z[i,:]))
 
 # convert a pauli object to its matrix representation
 def pauli_to_matrix(P):
@@ -260,8 +261,8 @@ def pauli_to_matrix(P):
     if P.paulis() != 1:
         raise Exception("Matrix can only be constructed for a single Pauli")
     X,Z = P.X[0],P.Z[0]
-    mmdict = {(0,0):I_mat,(0,1):Z_mat,(1,0):X_mat,(1,1):Y_mat}
-    return tensor([mmdict[(X[a],Z[a])] for a in range(P.qubits())])
+    mDict = {(0,0):I_mat,(0,1):Z_mat,(1,0):X_mat,(1,1):Y_mat}
+    return tensor([mDict[(X[i],Z[i])] for i in range(P.qubits())])
 
 # convert a collection of strings (or single string) to a pauli object
 def string_to_pauli(sss):
@@ -269,15 +270,15 @@ def string_to_pauli(sss):
     #     sss - (list{str}) or (str) - string representation of Pauli
     # Outputs:
     #     (pauli) - Pauli corresponding to input string(s)
-    Xdict = {"I":0,"X":1,"Y":1,"Z":0}
-    Zdict = {"I":0,"X":0,"Y":1,"Z":1}
+    XDict = {"I":0,"X":1,"Y":1,"Z":0}
+    ZDict = {"I":0,"X":0,"Y":1,"Z":1}
     if type(sss) is str:
-        X = np.array([[Xdict[s] for s in sss]],dtype=bool)
-        Z = np.array([[Zdict[s] for s in sss]],dtype=bool)
+        X = np.array([[XDict[s] for s in sss]],dtype=bool)
+        Z = np.array([[ZDict[s] for s in sss]],dtype=bool)
         return pauli(X,Z)
     else:
-        X = np.array([[Xdict[s] for s in ss] for ss in sss],dtype=bool)
-        Z = np.array([[Zdict[s] for s in ss] for ss in sss],dtype=bool)
+        X = np.array([[XDict[s] for s in ss] for ss in sss],dtype=bool)
+        Z = np.array([[ZDict[s] for s in ss] for ss in sss],dtype=bool)
         return pauli(X,Z)
 
 # convert a pauli object to a collection of strings (or single string)
@@ -287,61 +288,61 @@ def pauli_to_string(P):
     # Outputs:
     #     (list{str}) - string representation of Pauli
     X,Z = P.X,P.Z
-    ssdict = {(0,0):"I",(0,1):"Z",(1,0):"X",(1,1):"Y"}
+    ssDict = {(0,0):"I",(0,1):"Z",(1,0):"X",(1,1):"Y"}
     if P.paulis() == 0:
         return ''
     elif P.paulis() == 1:
-        return ''.join(ssdict[(X[0,a],Z[0,a])] for a in range(P.qubits()))
+        return ''.join(ssDict[(X[0,i],Z[0,i])] for i in range(P.qubits()))
     else:
-        return [''.join(ssdict[(X[a0,a1],Z[a0,a1])] for a1 in range(P.qubits())) for a0 in range(P.paulis())]
+        return [''.join(ssDict[(X[i0,i1],Z[i0,i1])] for i1 in range(P.qubits())) for i0 in range(P.paulis())]
 
 # the symplectic inner product of two pauli objects (each with a single Pauli)
-def symplectic_inner_product(P1,P2):
+def symplectic_inner_product(P0,P1):
     # Inputs:
+    #     P0 - (pauli) - must have shape (1,q)
     #     P1 - (pauli) - must have shape (1,q)
-    #     P2 - (pauli) - must have shape (1,q)
     # Outputs:
     #     (int) - symplectic inner product of Paulis modulo 2
-    if (P1.paulis() != 1) or (P2.paulis() != 1):
+    if (P0.paulis() != 1) or (P1.paulis() != 1):
         raise Exception("Symplectic inner product only works with pair of single Paulis")
-    if P1.qubits() != P2.qubits():
+    if P0.qubits() != P1.qubits():
         raise Exception("Symplectic inner product only works if Paulis have same number of qubits")
-    return functools.reduce(lambda x,y:x^y,np.logical_xor(np.logical_and(P1.X,P2.Z),np.logical_and(P1.Z,P2.X))[0,:])
+    return functools.reduce(lambda x,y:x^y,np.logical_xor(np.logical_and(P0.X,P1.Z),np.logical_and(P0.Z,P1.X))[0,:])
 
 # the symplectic inner product of two pauli objects (each with a single Pauli)
-def qubitwise_inner_product(P1,P2):
+def qubitwise_inner_product(P0,P1):
     # Inputs:
+    #     P0 - (pauli) - must have shape (1,q)
     #     P1 - (pauli) - must have shape (1,q)
-    #     P2 - (pauli) - must have shape (1,q)
     # Outputs:
     #     (int) - qubitwise inner product of Paulis modulo 2
-    if (P1.paulis() != 1) or (P2.paulis() != 1):
+    if (P0.paulis() != 1) or (P1.paulis() != 1):
         raise Exception("Qubitwise inner product only works with pair of single Paulis")
-    if P1.qubits() != P2.qubits():
+    if P0.qubits() != P1.qubits():
         raise Exception("Qubitwise inner product only works if Paulis have same number of qubits")
-    return any((P1.X[0,a]&P2.Z[0,a])^(P1.Z[0,a]&P2.X[0,a]) for a in range(P1.qubits()))
+    return any((P0.X[0,i]&P1.Z[0,i])^(P0.Z[0,i]&P1.X[0,i]) for i in range(P0.qubits()))
 
 # the product of two pauli objects
-def pauli_product(P1,P2):
+def pauli_product(P0,P1):
     # Inputs:
+    #     P0 - (pauli) - must have shape (1,q)
     #     P1 - (pauli) - must have shape (1,q)
-    #     P2 - (pauli) - must have shape (1,q)
     # Outputs:
     #     (pauli) - product of Paulis
-    if P1.paulis() != 1 or P2.paulis() != 1:
+    if P0.paulis() != 1 or P1.paulis() != 1:
         raise Exception("Product can only be calculated for single Paulis")
-    return pauli(np.logical_xor(P1.X,P2.X),np.logical_xor(P1.Z,P2.Z))
+    return pauli(np.logical_xor(P0.X,P1.X),np.logical_xor(P0.Z,P1.Z))
 
 
 
 # GATES & CIRCUITS
 
-# a class for storing quantum gates as a name and a set of qubits
+# a class for storing quantum gates as a name and a list of qubits
 class gate:
     def __init__(self,name,aa):
         # Inputs:
         #     name - (function)  - function for action of gate
-        #     aa   - (list{int}) - list of qubits
+        #     aa   - (list{int}) - list of qubits acted upon
         self.name = name
         self.aa = aa
 
@@ -414,7 +415,7 @@ class circuit:
         if type(aa) is int:
             del self.gg[aa]
         else:
-            self.gg = [self.gg[a1] for a1 in range(self.length()) if not a1 in aa]
+            self.gg = [self.gg[i] for i in range(self.length()) if not i in aa]
 
     # deep copy of self
     def copy(self):
@@ -536,7 +537,7 @@ def H_unitary(aa,q):
     #     q  - (int)       - number of qubits
     # Outputs:
     #     (scipy.sparse.csr_matrix) - matrix representation of q-dimensional H(aa)
-    return tensor([H_mat if a in aa else I_mat for a in range(q)])
+    return tensor([H_mat if i in aa else I_mat for i in range(q)])
 
 # function for mapping phase gate to corresponding unitary matrix
 def S_unitary(aa,q):
@@ -545,7 +546,7 @@ def S_unitary(aa,q):
     #     q  - (int)       - number of qubits
     # Outputs:
     #     (scipy.sparse.csr_matrix) - matrix representation of q-dimensional S(aa)
-    return tensor([S_mat if a in aa else I_mat for a in range(q)])
+    return tensor([S_mat if i in aa else I_mat for i in range(q)])
 
 # function for mapping CNOT gate to corresponding unitary matrix
 def CX_unitary(aa,q):
@@ -556,9 +557,9 @@ def CX_unitary(aa,q):
     #     (scipy.sparse.csr_matrix) - matrix representation of q-dimensional CNOT(aa[0],aa[1])
     a0 = q-1-aa[0]
     a1 = q-1-aa[1]
-    aa2 = np.array([1 for a2 in range(1<<q)])
-    aa3 = np.array([a3 for a3 in range(1<<q)])
-    aa4 = np.array([(a4^((a4&(1<<(a0)))>>a0)*(1<<(a1))) for a4 in range(1<<q)])
+    aa2 = np.array([1 for i in range(1<<q)])
+    aa3 = np.array([i for i in range(1<<q)])
+    aa4 = np.array([(i^((i&(1<<(a0)))>>a0)*(1<<(a1))) for i in range(1<<q)])
     return scipy.sparse.csr_matrix((aa2,(aa3,aa4)))
 
 # function for mapping CZ gate to corresponding unitary matrix
@@ -570,9 +571,9 @@ def CZ_unitary(aa,q):
     #     (scipy.sparse.csr_matrix) - matrix representation of q-dimensional CZ(aa[0],aa[1])
     a0 = q-1-aa[0]
     a1 = q-1-aa[1]
-    aa2 = np.array([(-1)**(((a2&(1<<(a0)))>>a0)&((a2&(1<<(a1)))>>a1)) for a2 in range(1<<q)])
-    aa3 = np.array([a3 for a3 in range(1<<q)])
-    aa4 = np.array([a4 for a4 in range(1<<q)])
+    aa2 = np.array([(-1)**(((i&(1<<(a0)))>>a0)&((i&(1<<(a1)))>>a1)) for i in range(1<<q)])
+    aa3 = np.array([i for i in range(1<<q)])
+    aa4 = np.array([i for i in range(1<<q)])
     return scipy.sparse.csr_matrix((aa2,(aa3,aa4)))
 
 # function for mapping SWAP gate to corresponding unitary matrix
@@ -584,9 +585,9 @@ def SWAP_unitary(aa,q):
     #     (scipy.sparse.csr_matrix) - matrix representation of q-dimensional SWAP(aa[0],aa[1])
     a0 = q-1-aa[0]
     a1 = q-1-aa[1]
-    aa2 = np.array([1 for a2 in range(1<<q)])
-    aa3 = np.array([a3 for a3 in range(1<<q)])
-    aa4 = np.array([a4^(1<<a0)^(1<<a1) if (((a4&(1<<a0))>>a0)^((aa4&(1<<a1))>>a1)) else a4 for a4 in range(1<<q)])
+    aa2 = np.array([1 for i in range(1<<q)])
+    aa3 = np.array([i for i in range(1<<q)])
+    aa4 = np.array([i^(1<<a0)^(1<<a1) if (((i&(1<<a0))>>a0)^((i&(1<<a1))>>a1)) else i for i in range(1<<q)])
     return scipy.sparse.csr_matrix((aa2,(aa3,aa4)))
 
 # returns the circuit which diagonalizes a pairwise commuting pauli object
@@ -596,17 +597,20 @@ def diagonalize(P):
     # Outputs:
     #     (circuit) - circuit which diagonalizes P
     q = P.qubits()
-    # if not P.is_commuting():
-    #     raise Exception("Paulis must be pairwise commuting to be diagonalized")
+
+    if not P.is_commuting():
+        raise Exception("Paulis must be pairwise commuting to be diagonalized")
     P1 = P.copy()
     C = circuit(q)
+
     # for each qubit, call diagonalize_iter_
-    for a in range(q):
-        C = diagonalize_iter_(P1,C,a)
+    for i in range(q):
+        C = diagonalize_iter_(P1,C,i)
     P1 = act(P1,C)
+
     # if any qubits are X rather than Z, apply H to make them Z
-    if [a for a in range(P1.qubits()) if any(P1.X[:,a])]:
-        C.add_gates_(gate(H,[a for a in range(q) if any(P1.X[:,a])]))
+    if [i for i in range(P1.qubits()) if any(P1.X[:,i])]:
+        C.add_gates_(gate(H,[i for i in range(q) if any(P1.X[:,i])]))
     return C
 
 # an iterative function called within diagonalize()
@@ -625,16 +629,16 @@ def diagonalize_iter_(P,C,a):
         return C
 
     # set a1 to be the index of the minimum Pauli with non-zero X-part of qubit a
-    a1 = min(a2 for a2 in range(p) if P.X[a2,a])
+    a1 = min(i for i in range(p) if P.X[i,a])
 
     # add CNOT gates to cancel out all non-zero X-parts on Pauli a1, qubits > a
-    if any(P.X[a1,a2] for a2 in range(a+1,q)):
-        gg = [gate(CX,[a,a2]) for a2 in range(a+1,q) if P.X[a1,a2]]
+    if any(P.X[a1,i] for i in range(a+1,q)):
+        gg = [gate(CX,[a,i]) for i in range(a+1,q) if P.X[a1,i]]
         C.add_gates_(gg)
         P = act(P,gg)
 
     # check whether there are any non-zero Z-parts on Pauli a1, qubits > a
-    if any(P.Z[a1,a2] for a2 in range(a+1,q)):
+    if any(P.Z[a1,i] for i in range(a+1,q)):
 
         # if Pauli a1, qubit a is X, apply S gate to make it Y
         if not P.Z[a1,a]:
@@ -643,7 +647,7 @@ def diagonalize_iter_(P,C,a):
             P = act(P,g)
 
         # add backwards CNOT gates to cancel out all non-zero Z-parts on Pauli a1, qubits > a
-        gg = [gate(CX,[a2,a]) for a2 in range(a+1,q) if P.Z[a1,a2]]
+        gg = [gate(CX,[i,a]) for i in range(a+1,q) if P.Z[a1,i]]
         C.add_gates_(gg)
         P = act(P,gg)
 
@@ -669,32 +673,32 @@ class graph:
         self.adj = adj_mat.astype(dtype)
 
     # adds a vertex to self
-    def add_vertex_(self,weight=1):
+    def add_vertex_(self,c=1):
         # Inputs:
-        #     weight - (float) - vertex weight
+        #     c - (float) - vertex weight
         if len(self.adj) == 0:
-            self.adj = np.array([weight])
+            self.adj = np.array([c])
         else:
-            r = np.zeros((1,len(self.adj)))
-            c = np.zeros((len(self.adj),1))
-            w = np.array([[weight]])
-            self.adj = np.block([[self.adj,c],[r,w]])
+            m0 = np.zeros((len(self.adj),1))
+            m1 = np.zeros((1,len(self.adj)))
+            m2 = np.array([[c]])
+            self.adj = np.block([[self.adj,m0],[m1,m2]])
 
     # weight a vertex
-    def lade_vertex_(self,a,weight):
+    def lade_vertex_(self,a,c):
         # Inputs:
-        #     a      - (int)   - vertex to be weighted
-        #     weight - (float) - vertex weight
-        self.adj[a,a] = weight
+        #     a - (int)   - vertex to be weighted
+        #     c - (float) - vertex weight
+        self.adj[a,a] = c
 
     # weight an edge
-    def lade_edge_(self,a1,a2,weight):
+    def lade_edge_(self,a0,a1,c):
         # Inputs:
-        #     a1     - (int)   - first vertex
-        #     a2     - (int)   - second vertex
-        #     weight - (float) - vertex weight
-        self.adj[a1,a2] = weight
-        self.adj[a2,a1] = weight
+        #     a0 - (int)   - first vertex
+        #     a1 - (int)   - second vertex
+        #     c  - (float) - vertex weight
+        self.adj[a0,a1] = c
+        self.adj[a1,a0] = c
 
     # returns a set of the neighbors of a given vertex
     def neighbors(self,a):
@@ -703,9 +707,9 @@ class graph:
         # Outputs:
         #     (list{int}) - set of neighbors of vertex a
         aa1 = set([])
-        for a1 in range(self.ord()):
-            if (a != a1) and (self.adj[a,a1] != 0):
-                aa1.add(a1)
+        for i in range(self.ord()):
+            if (a != i) and (self.adj[a,i] != 0):
+                aa1.add(i)
         return aa1
 
     # returns list of all edges in self
@@ -713,9 +717,9 @@ class graph:
         # Outputs:
         #     (list{list{int}}) - list of edges in self
         aaa = []
-        for a0,a1 in itertools.combinations(range(self.ord()),2):
-            if a1 in self.neighbors(a0):
-                aaa.append([v,w])
+        for i0,i1 in itertools.combinations(range(self.ord()),2):
+            if i1 in self.neighbors(i0):
+                aaa.append([i0,i1])
         return aaa
 
     # check whether a collection of vertices is a clique in self
@@ -724,8 +728,8 @@ class graph:
         #     aa - (list{int}) - list of vertices to be checked for clique
         # Outputs:
         #     (bool) - True if aa is a clique in self; False otherwise
-        for a0,a1 in itertools.combinations(vv,2):
-            if self.adj[a0,a1] == 0:
+        for i0,i1 in itertools.combinations(aa,2):
+            if self.adj[i0,i1] == 0:
                 return False
         return True
 
@@ -745,29 +749,29 @@ class graph:
 
     # print adjacency matrix representation of self
     def print(self):
-        for a in range(self.ord()):
+        for i0 in range(self.ord()):
             print('[',end=' ')
-            for b in range(self.ord()):
-                s = self.adj[a,b]
+            for i1 in range(self.ord()):
+                s = self.adj[i0,i1]
                 if str(s)[0] == '-':
-                    print(f'{self.adj[a,b]:.6f}',end=" ")
+                    print(f'{self.adj[i0,i1]:.2f}',end=" ")
                 else:
-                    print(' '+f'{self.adj[a,b]:.6f}',end=" ")
+                    print(' '+f'{self.adj[i0,i1]:.2f}',end=" ")
             print(']')
 
     # print self as a list of vertices together with their neighbors
     def print_neighbors(self):
-        for v in range(self.ord()):
-            print(v,end=": ")
-            for w in self.neighbors(v):
-                print(w,end=" ")
+        for i0 in range(self.ord()):
+            print(i0,end=": ")
+            for i1 in self.neighbors(i0):
+                print(i1,end=" ")
             print()
 
     # return a deep copy of self
     def copy(self):
         # Outputs:
         #     (graph) - deep copy of self
-        return graph(np.array([[self.adj[a,b] for b in range(self.ord())] for a in range(self.ord)]))
+        return graph(np.array([[self.adj[i0,i1] for i1 in range(self.ord())] for i0 in range(self.ord)]))
 
 # returns all non-empty cliques in a graph
 def nonempty_cliques(A):
@@ -777,10 +781,10 @@ def nonempty_cliques(A):
     #     (list{list{int}}) - a list containing all non-empty cliques in A
     p = A.ord()
     aaa = set([frozenset([])])
-    for a in range(p):
-        aset = set([a])
-        inter = A.neighbors(a)
-        aaa |= set([frozenset(aset|(inter&aa)) for aa in aaa])
+    for i in range(p):
+        iset = set([i])
+        inter = A.neighbors(i)
+        aaa |= set([frozenset(iset|(inter&aa)) for aa in aaa])
     aaa.remove(frozenset([]))
     return list([list(aa) for aa in aaa])
 
@@ -790,38 +794,123 @@ def all_maximal_cliques(A):
     #     A - (graph) - graph for which all cliques should be found
     # Outputs:
     #     (generator) - a generator over all maximal cliques in A
-    G = nx.Graph()
-    G.add_nodes_from([a for a in range(A.ord())])
-    G.add_edges_from([(a,b) for a in range(A.ord()) for b in A.neighbors(a)])
-    return nx.algorithms.clique.find_cliques(G)
+    p = A.ord()
+    N = {}
+    for i in range(p):
+        N[i] = A.neighbors(i)
+    nxG = nx.Graph()
+    nxG.add_nodes_from([i for i in range(p)])
+    nxG.add_edges_from([(i0,i1) for i0 in range(p) for i1 in N[i0]])
+    return nx.algorithms.clique.find_cliques(nxG)
 
-# returns a clique-covering of a graph which hits every vertex at least a certain number of times
+# returns a clique covering of a graph which hits every vertex at least a certain number of times
+def weighted_vertex_covering_maximal_cliques(A,A1=None,cc=None,k=1):
+    # Inputs:
+    #     A  - (graph)     - commutation graph for which covering should be found
+    #     A1 - (graph)     - variance graph for which covering should be found
+    #     cc - (list{int}) - coefficients of the Hamiltonian
+    #     k  - (int)       - number of times each vertex should be covered
+    # Outputs:
+    #     (list{list{int}}) - a list containing cliques which cover A
+    p = A.ord()
+    if A1 == None and cc == None:
+        return vertex_covering_maximal_cliques(A,k=k)
+    elif A1 == None:
+        cc2 = [cc[i]**2 for i in range(p)]
+        N = {}
+        for i in range(p):
+            N[i] = A.neighbors(i)
+        aaa = []
+        for i0 in range(p):
+            for i1 in range(k):
+                aa0 = [i0]
+                aa1 = list(N[i0])
+                while aa1:
+                    c1 = sum(cc2[a0] for a0 in aa0)
+                    cc1 = [c1+sum(cc2[a2] for a2 in N[a1].intersection(aa1)) for a1 in aa1]
+                    if sum(cc1) == 0:
+                        cc1 = [1 for a in aa1]
+                    r = random.choices(aa1,cc1)[0]
+                    aa0.append(r)
+                    aa1 = list(N[r].intersection(aa1))
+                aaa.append(aa0)
+        return [sorted(list(aa1)) for aa1 in set([frozenset(aa) for aa in aaa])]
+    else:
+        V1 = A1.adj
+        N = {}
+        for i in range(p):
+            N[i] = A.neighbors(i)
+        N2 = {}
+        for i in range(p):
+            N2[i] = A.neighbors(i)|set([i])
+        aaa = []
+        for i0 in range(p):
+            for i1 in range(k):
+                aa0 = [i0]
+                aa1 = list(N[i0])
+                aa2 = aa0+aa1
+                while aa1:
+                    cc1 = [V1[list(N2[a1].intersection(aa2))][:,list(N2[a1].intersection(aa2))].sum() for a1 in aa1]
+                    if sum(cc1) == 0:
+                        cc1 = [1 for a in aa1]
+                    r = random.choices(aa1,cc1)[0]
+                    aa0.append(r)
+                    aa1 = list(N[r].intersection(aa1))
+                    aa2 = aa0+aa1
+                aaa.append(aa0)
+        return [sorted(list(aa1)) for aa1 in set([frozenset(aa) for aa in aaa])]
+
+# returns a clique covering of a graph which hits every vertex at least a certain number of times
 def vertex_covering_maximal_cliques(A,k=1):
     # Inputs:
-    #     A - (graph) - graph for which covering should be found
-    #     k - (int)   - number of times each vertex should be covered
+    #     A - (graph) - commutation graph for which covering should be found
+    #     k - (int)   - number of times each vertex must be covered
     # Outputs:
     #     (list{list{int}}) - a list containing cliques which cover A
     p = A.ord()
     N = {}
-    for a in range(p):
-        N[a] = A.neighbors(a)
+    for i in range(p):
+        N[i] = A.neighbors(i)
     aaa = []
-    for b in range(p):
-        for _ in range(k):
-            cc = [b]
-            dd = list(N[b])
-            while dd:
-                ww = [len(N[d].intersection(dd)) for d in dd]
-                if sum(ww) == 0:
-                    ww = [1 for d in dd]
-                c = random.choices(dd,ww)[0]
-                cc.append(c)
-                dd = list(N[c].intersection(dd))
-            aaa.append(cc)
+    for i0 in range(p):
+        for i1 in range(k):
+            aa0 = [i0]
+            aa1 = list(N[i0])
+            while aa1:
+                cc = [len(N[a1].intersection(aa1)) for a1 in aa1]
+                if sum(cc) == 0:
+                    cc = [1 for a in aa1]
+                r = random.choices(aa1,cc)[0]
+                aa0.append(r)
+                aa1 = list(N[r].intersection(aa1))
+            aaa.append(aa0)
+    return [sorted(list(aa1)) for aa1 in set([frozenset(aa) for aa in aaa])]
+
+# reduces a clique covering of a graph by removing cliques with lowest weight
+def post_process_cliques(A,aaa,k=1):
+    # Inputs:
+    #     A   - (graph)           - varaince graph from which weights of cliques can be obtained
+    #     aaa - (list{list{int}}) - a clique covering of the Hamiltonian
+    #     k   - (int)             - number of times each vertex must be covered
+    # Outputs:
+    #     (list{list{int}}) - a list containing cliques which cover A
+    p = A.ord()
+    V = A.adj
+    s = np.array([sum([i in aa for aa in aaa]) for i in range(p)])
+    D = {}
+    for aa in aaa:
+        D[str(aa)] = V[aa][:,aa].sum()
+    aaa1 = aaa.copy()
+    aaa1 = list(filter(lambda x : all(a>=(k+1) for a in s[aa]),aaa1))
+    while aaa1:
+        aa = min(aaa1,key=lambda x : D[str(x)])
+        aaa.remove(aa)
+        aaa1.remove(aa)
+        s -= np.array([int(i in aa) for i in range(p)])
+        aaa1 = list(filter(lambda x : all(a>=(k+1) for a in s[aa]),aaa1))
     return aaa
 
-# returns a largest degree first clique partition of a graph
+# returns a largest-degree-first clique partition of a graph
 def LDF(A):
     # Inputs:
     #     A - (graph) - graph for which partition should be found
@@ -830,19 +919,19 @@ def LDF(A):
     p = A.ord()
     remaining = set(range(p))
     N = {}
-    for a in range(p):
-        N[a] = A.neighbors(a)
+    for i in range(p):
+        N[i] = A.neighbors(i)
     aaa = []
     while remaining:
         a = max(remaining,key=lambda x : len(N[x]&remaining))
-        aa = set([a])
+        aa0 = set([a])
         aa1 = N[a]&remaining
         while aa1:
             a2 = max(aa1,key=lambda x : len(N[x]&aa1))
-            aa.add(a2)
+            aa0.add(a2)
             aa1 &= N[a2]
-        aaa.append(aa)
-        remaining -= aa
+        aaa.append(aa0)
+        remaining -= aa0
     return [sorted(list(aa)) for aa in aaa]
 
 
@@ -874,6 +963,17 @@ def Mean(P,psi):
     mean = psi_dag @ m @ psi
     return mean.real
 
+# returns the mean of a Hamiltonian with a given state
+def Hamiltonian_Mean(P,cc,psi):
+    # Inputs:
+    #     P   - (pauli)       - Paulis of Hamiltonian
+    #     cc  - (list{float}) - coefficients of Hamiltonian
+    #     psi - (numpy.array) - state for mean
+    # Outputs:
+    #     (numpy.float64) - mean sum(c*<psi|P|psi>)
+    p = P.paulis()
+    return sum(cc[i]*Mean(P.a_pauli(i),psi) for i in range(p))
+
 # returns the variance of a single Pauli with a given state
 def Var(P,psi):
     # Inputs:
@@ -888,33 +988,43 @@ def Var(P,psi):
     return var.real
 
 # returns the variance of two single Paulis with a given state
-def Cov(P1,P2,psi):
+def Cov(P0,P1,psi):
     # Inputs:
-    #     P1  - (pauli)       - first Pauli for covariance
-    #     P2  - (pauli)       - second Pauli for covariance
-    #     psi - (numpy.array) - state for variance
+    #     P0  - (pauli)       - first Pauli for covariance
+    #     P1  - (pauli)       - second Pauli for covariance
+    #     psi - (numpy.array) - state for covariance
     # Outputs:
-    #     (numpy.float64) - covariance <psi|P1P2|psi> - <psi|P1|psi><psi|P2|psi>
+    #     (numpy.float64) - covariance <psi|P0P1|psi> - <psi|P0|psi><psi|P1|psi>
+    m0 = pauli_to_matrix(P0)
     m1 = pauli_to_matrix(P1)
-    m2 = pauli_to_matrix(P2)
     psi_dag = psi.conj().T
-    cov = (psi_dag @ m1 @ m2 @ psi)-(psi_dag @ m1 @ psi)*(psi_dag @ m2 @ psi)
+    cov = (psi_dag @ m0 @ m1 @ psi)-(psi_dag @ m0 @ psi)*(psi_dag @ m1 @ psi)
     return cov.real
 
 # returns the graph of variances and covariances for a given Hamiltonian and ground state
-def variance_graph(P,constants,psi):
+def variance_graph(P,cc,psi):
     # Inputs:
-    #     P         - (pauli)         - set of Paulis in Hamiltonian
-    #     constants - (list{float64}) - constants in Hamiltonian
-    #     psi       - (numpy.array)   - ground state
+    #     P   - (pauli)         - set of Paulis in Hamiltonian
+    #     cc  - (list{float64}) - coefficients in Hamiltonian
+    #     psi - (numpy.array)   - ground state
     # Outputs:
     #     (graph) - variances and covariances of all Paulis with respect to ground state
     p = P.paulis()
-    mm = [pauli_to_matrix(P.a_pauli(a)) for a in range(p)]
+    mm = [pauli_to_matrix(P.a_pauli(i)) for i in range(p)]
     psi_dag = psi.conj().T
-    pmp = [(psi_dag@mm[a]@psi).real for a in range(p)]
-    V = np.array([[constants[a1]*constants[a0]*((psi_dag@mm[a1]@mm[a0]@psi)-pmp[a1]*pmp[a0]).real for a1 in range(p)] for a0 in range(p)])
-    return graph(adj_mat=V)
+    cc1 = [(psi_dag@mm[i]@psi).real for i in range(p)]
+    return graph(np.array([[cc[i0]*cc[i1]*((psi_dag@mm[i0]@mm[i1]@psi)-cc1[i0]*cc1[i1]).real for i1 in range(p)] for i0 in range(p)]))
+
+# scales the entries in a variance graph with respect to number of measurements
+def scale_variances(A,S):
+    # Inputs:
+    #     A - (graph)       - variance matrix
+    #     S - (numpy.array) - array for tracking number of measurements
+    p = A.ord()
+    S1 = S.copy()
+    S1[range(p),range(p)] = [a if a != 0 else 1 for a in S1.diagonal()]
+    s1 = 1/S1.diagonal()
+    return graph(S1*A.adj*s1*s1[:,None])
 
 # returns the commutation graph of a given Pauli
 def commutation_graph(P):
@@ -923,18 +1033,7 @@ def commutation_graph(P):
     # Outputs:
     #     (graph) - an edge is weighted 1 if the pair of Paulis commute
     p = P.paulis()
-    V = np.array([[1-symplectic_inner_product(P.a_pauli(a0),P.a_pauli(a1)) for a1 in range(p)] for a0 in range(p)])
-    return graph(V,dtype=bool)
-
-# returns the complement of the commutation graph
-def anticommutation_graph(P):
-    # Inputs:
-    #     P - (pauli) - Pauli to check for anticommutation relations
-    # Outputs:
-    #     (graph) - edge is weighted 1 if the pair of Paulis anticommute
-    p = P.paulis()
-    V = np.array([[symplectic_inner_product(P.a_pauli(a0),P.a_pauli(a1)) for a1 in range(p)] for a0 in range(p)])
-    return graph(adj_mat=V,dtype=bool)
+    return graph(np.array([[1-symplectic_inner_product(P.a_pauli(i0),P.a_pauli(i1)) for i1 in range(p)] for i0 in range(p)]))
 
 # returns the qubitwise commutation graph of a given Pauli
 def qubitwise_commutation_graph(P):
@@ -943,8 +1042,7 @@ def qubitwise_commutation_graph(P):
     # Outputs:
     #     (graph) - an edge is weighted 1 if the pair of Paulis qubitwise commute
     p = P.paulis()
-    V = np.array([[1-qubitwise_inner_product(P.a_pauli(a0),P.a_pauli(a1)) for a1 in range(p)] for a0 in range(p)])
-    return graph(adj_mat=V,dtype=bool)
+    return graph(np.array([[1-qubitwise_inner_product(P.a_pauli(i0),P.a_pauli(i1)) for i1 in range(p)] for i0 in range(p)]))
 
 # returns a random Hamiltonian with given number of Paulis, number of qubits, and Pauli weight
 def random_Ham(p,q,d):
@@ -956,31 +1054,32 @@ def random_Ham(p,q,d):
     #     (pauli) - random set of Paulis satisfying input conditions
     sss = []
     ssdict = {0:"I",1:"Z",2:"X",3:"Y"}
-    for a in range(p):
-        sss.append("".join([ssdict[random.randint(0,3)] if a1 in random.sample(range(q),d) else "I" for a1 in range(q)]))
+    for i in range(p):
+        rr = random.sample(range(q),d)
+        sss.append("".join([ssdict[random.randint(0,3)] if i1 in rr else "I" for i1 in range(q)]))
     return string_to_pauli(sss)
 
-# print list of Paulis in string form, together with constants
-def print_Ham_string(P,constants):
+# print list of Paulis in string form, together with coefficients
+def print_Ham_string(P,cc):
     # Inputs:
-    #     P         - (pauli)     - Pauli to be printed
-    #     constants - (list{int}) - constants for Hamiltonian
+    #     P  - (pauli)     - Pauli to be printed
+    #     cc - (list{int}) - coefficients for Hamiltonian
     X,Z = P.X,P.Z
-    for a in range(P.paulis()):
-        print(pauli_to_string(P.a_pauli(a)),end="")
-        if constants[a] >= 0:
-            print(" +%s"%constants[a])
+    for i in range(P.paulis()):
+        print(pauli_to_string(P.a_pauli(i)),end="")
+        if cc[i] >= 0:
+            print(" +%s"%cc[i])
         else:
-            print(" %s"%constants[a])
+            print(" %s"%cc[i])
 
 # returns the ground state of a given Hamiltonian
-def ground_state(P,constants):
+def ground_state(P,cc):
     # Inputs:
-    #     P         - (pauli)     - Paulis for Hamiltonian
-    #     constants - (list{int}) - constants for Hamiltonian
+    #     P  - (pauli)     - Paulis for Hamiltonian
+    #     cc - (list{int}) - coefficients for Hamiltonian
     # Outputs:
     #     (numpy.array) - eigenvector corresponding to lowest eigenvalue of Hamiltonian
-    m = sum(pauli_to_matrix(P.a_pauli(a))*constants[a] for a in range(P.paulis()))
+    m = sum(pauli_to_matrix(P.a_pauli(i))*cc[i] for i in range(P.paulis()))
     gval,gvec = scipy.sparse.linalg.eigsh(m,which='SA',k=1)
     return np.array([g for g in gvec[:,0]])
 
@@ -1010,56 +1109,39 @@ def negation_iter(P,g):
     # Outputs:
     #     (list{bool}) - ith element is True if Pauli i anticommutes with gate, False otherwise
     if g.name == S:
-        return np.logical_xor.reduce([P.X[:,a1]&P.Z[:,a1] for a1 in g.aa])
+        return np.logical_xor.reduce([P.X[:,a]&P.Z[:,a] for a in g.aa])
     elif g.name == H:
-        return np.logical_xor.reduce([P.X[:,a1]&P.Z[:,a1] for a1 in g.aa])
+        return np.logical_xor.reduce([P.X[:,a]&P.Z[:,a] for a in g.aa])
     elif g.name == CX:
         a0,a1 = g.aa
         return P.X[:,a0]&P.Z[:,a1]&(P.Z[:,a0]==P.X[:,a1])
     return [False]*P.paulis()
 
-# samples ground state with respect to eigenstates of a clique
-def sample_and_remember(P,psi,aa):
+# sample from distribution given by ground state and eigenstates of clique
+#     optionally input a dictionary, which will be updated to track speed up future samples
+def sample_(P,psi,aa,D={}):
     # Inputs:
-    #     P   - (pauli)     - Pauli for consideration
-    #     psi - (circuit)   - circuit for consideration
-    #     aa  - (list{int}) - clique to be measured
+    #     P   - (pauli)       - Paulis for Hamiltonian
+    #     psi - (numpy.array) - ground state of Hamiltonian
+    #     aa  - (list{int})   - clique to be measured
+    #     D   - (dict)        - dictionary for storing pdf and negations for future samples
     # Outputs:
-    #     (list{int}) - ith element eigenvalue of sampled eigenstate with respect to Pauli i
-    P1 = P.copy()
-    P1.delete_paulis_([a1 for a1 in range(P.paulis()) if not a1 in aa])
-    C = diagonalize(P1)
-    bb = negations(P1,C)
-    P1 = act(P1,C)
-    psi_diag = C.unitary() @ psi
-    cdf = [0]
-    for a1 in range(len(psi_diag)):
-        cdf.append(cdf[-1]+np.absolute(psi_diag[a1])**2)
-    l = len(cdf)
+    #     (list{int}) - ith entry is +1/-1 for measurement outcome on ith element of aa
+    if str(aa) in D.keys():
+        P1,pdf,bb = D[str(aa)]
+    else:
+        P1 = P.copy()
+        P1.delete_paulis_([i for i in range(P.paulis()) if not i in aa])
+        C = diagonalize(P1)
+        psi_diag = C.unitary() @ psi
+        pdf = np.absolute(psi_diag*psi_diag.conj())
+        bb = negations(P1,C)
+        P1 = act(P1,C)
+        D[str(aa)] = (P1,pdf,bb)
     p,q = P1.paulis(),P1.qubits()
-    r = random.uniform(0,cdf[-1])
-    a = max(np.where([c<=r for c in cdf])[0])
-    sample = np.array([[a&(l>>(a1+1)) for a1 in range(q)]],dtype=bool)
-    return [(-1)**(bb[a1]^functools.reduce(lambda x,y:x^y,(sample&P1.Z)[a1,:])) for a1 in range(p)],P1,cdf,bb
-
-# samples ground state with respect to eigenstates of a clique using previously computed cdf
-def sample_from_memory(P,cdf,bb):
-    l = len(cdf)
-    p,q = P.paulis(),P.qubits()
-    r = random.uniform(0,cdf[-1])
-    a = max(np.where([c<=r for c in cdf])[0])
-    sample = np.array([[a&(l>>(b+1)) for b in range(q)]],dtype=bool)
-    return [(-1)**(bb[a1]^functools.reduce(lambda x,y:x^y,(sample&P.Z)[a1,:])) for a1 in range(p)]
-
-# scales the entries in a variance graph with respect to number of measurements
-def scale_variances(A,X):
-    # Inputs:
-    #     A - (graph)             - variance matrix
-    #     X - (numpy.array{Dict}) - array for tracking measurement outcomes
-    p = A.ord()
-    S0 = np.array([[sum(X[a0,a1].values()) for a1 in range(p)] for a0 in range(p)])
-    S1 = np.array([[S0[a0,a1]/(S0[a0,a0]*S0[a1,a1]) if S0[a0,a1]>0 else int(a0==a1) for a1 in range(p)] for a0 in range(p)])
-    return graph(np.multiply(S1,A.adj))
+    a1 = np.random.choice(1<<q,p=pdf)
+    s = np.array([[a1&(1<<(q-1-i)) for i in range(q)]],dtype=bool)&P1.Z
+    return [(-1)**(bb[i]^functools.reduce(lambda x,y:x^y,s[i])) for i in range(p)]
 
 
 
@@ -1101,11 +1183,14 @@ def bayes_Cov(xyDict,xDict,yDict):
     return 4*((xy00+p00)*(xy11+p11) - (xy01+p01)*(xy10+p10))/((xy00+xy01+xy10+xy11+4)*(xy00+xy01+xy10+xy11+5))
 
 # approximates the variance graph using Bayesian estimates
-def bayes_variance_graph(X,constants):
+def bayes_variance_graph(X,cc):
     # Inputs:
-    #     X         - (numpy.array{Dict}) - array for tracking measurement outcomes
-    #     constants - (list{float})       - coefficients of Hamiltonian
-    return graph(np.array([[(constants[a]**2)*bayes_Var(X[a,a]) if a==b else constants[a]*constants[b]*bayes_Cov(X[a,b],X[a,a],X[b,b]) for b in range(len(constants))] for a in range(len(constants))]))
+    #     X  - (numpy.array{dict}) - array for tracking measurement outcomes
+    #     cc - (list{float})       - coefficients of Hamiltonian
+    # Outputs:
+    #     (numpy.array{float}) - variance graph calculated with Bayesian estimates
+    p = len(cc)
+    return graph(np.array([[(cc[i0]**2)*bayes_Var(X[i0,i0]) if i0==i1 else cc[i0]*cc[i1]*bayes_Cov(X[i0,i1],X[i0,i0],X[i1,i1]) for i1 in range(p)] for i0 in range(p)]))
 
 # naive estimation of mean from samples
 def naive_Mean(xDict):
@@ -1145,116 +1230,168 @@ def naive_Cov(xyDict,xDict,yDict):
     return 4*((xy00)*(xy11) - (xy01)*(xy10))/((xy00+xy01+xy10+xy11)*(xy00+xy01+xy10+xy11))
 
 # approximates the variance graph using naive estimates
-def naive_variance_graph(X,constants):
+def naive_variance_graph(X,cc):
     # Inputs:
-    #     X         - (numpy.array{Dict}) - array for tracking measurement outcomes
-    #     constants - (list{float})       - coefficients of Hamiltonian
-    return graph(np.array([[(constants[a0]**2)*naive_Var(X[a0,a0]) if a0==a1 else constants[a0]*constants[a1]*naive_Cov(X[a0,a1],X[a0,a0],X[a1,a1]) for a1 in range(len(constants))] for a0 in range(len(constants))]))
+    #     X  - (numpy.array{dict}) - array for tracking measurement outcomes
+    #     cc - (list{float})       - coefficients of Hamiltonian
+    # Outputs:
+    #     (numpy.array{float}) - variance graph calculated with naive estimates
+    p = len(cc)
+    return graph(np.array([[(cc[i0]**2)*naive_Var(X[i0,i0]) if i0==i1 else cc[i0]*cc[i1]*naive_Cov(X[i0,i1],X[i0,i0],X[i1,i1]) for i1 in range(p)] for i0 in range(p)]))
 
 
 
 # SIMULATION ALGORITHMS
 
+# convert from L,l notation to set of update steps
+def Ll_updates(L,l,shots):
+    # Inputs:
+    #     L     - (int) - number of sections into which shots should be split
+    #     l     - (int) - exponential scaling factor for size of sections
+    #     shots - (int) - total number of shots required
+    # Outputs:
+    #     (set{int}) - set containing steps at which algorithm should update
+    r0_shots = shots/sum([(1+l)**i for i in range(L)])
+    shot_nums = [round(r0_shots*(1+l)**i) for i in range(L-1)]
+    shot_nums.append(shots-sum(shot_nums))
+    return set([0]+list(itertools.accumulate(shot_nums))[:-1])
+
+# updates the variance matrix by sampling from pre-determined cliques
+def variance_estimate_(P,cc,psi,D,X,xxx):
+    # Inputs:
+    #     P   - (pauli)             - Paulis in Hamiltonian
+    #     cc  - (list{int})         - coefficients in Hamiltonian
+    #     psi - (numpy.array)       - ground state of Hamiltonian
+    #     D   - (dict)              - dictionary for storing pdf and negations for future samples
+    #     X   - (numpy.array{dict}) - array of measurement outcome counts
+    #     xxx - (list{list{int}})   - list of cliques to-be-sampled
+    # Outputs:
+    #     (numpy.array{float}) - variance graph calculated with Bayesian estimates
+    #     (dict)               - (updated) dictionary for storing pdf and negations for future samples
+    #     (numpy.array{dict})  - (updated) array of measurement outcome counts
+    p = P.paulis()
+    index_set = set(range(p))
+    for aa in xxx:
+        aa1 = sorted(index_set.difference(aa))
+        cc1 = sample_(P,psi,aa,D)
+        for (a0,c0),(a1,c1) in itertools.product(zip(aa,cc1),repeat=2):
+            X[a0,a1][(c0,c1)] += 1
+    return bayes_variance_graph(X,cc).adj,D,X
+
 # partitions Hamiltonian and repeatedly samples cliques while minimizing total variance
 #     returns an array of dictionaries which tracks ++/+-/-+/-- outcomes for each pair of Paulis
-def greedy_bayes_min_var(P,constants,psi,shots,part_func,update_var=1):
+def bucket_filling(P,cc,psi,shots,part_func,update_steps=set([]),repeats=(0,1),full_simulation=False):
     # Inputs:
-    #     P          - (pauli)       - Paulis in Hamiltonian
-    #     constants  - (list{int})   - coefficients in Hamiltonian
-    #     psi        - (numpy.array) - ground state of Hamiltonian
-    #     shots      - (int)         - number of samples to take
-    #     part_func  - (function)    - function for determining partition
-    #     update_var - (int)         - number of turns between updating variance estimates
+    #     P               - (pauli)       - Paulis in Hamiltonian
+    #     cc              - (list{int})   - coefficients in Hamiltonian
+    #     psi             - (numpy.array) - ground state of Hamiltonian
+    #     shots           - (int)         - number of samples to take
+    #     part_func       - (function)    - function for determining partition
+    #     update_steps    - (set{int})    - steps at which variance graph should be updated
+    #     repeats         - (tuple{int})  - current iteration and total number of iterations
+    #     full_simulation - (bool)        - set True if full simulation is required
     # Outputs:
-    #     (numpy.array{Dict}) - array of measurement outcome counts
+    #     (numpy.array{int})  - array containing number of times each pair of Paulis was measured together
+    #     (numpy.array{dict}) - array of measurement outcome counts
+    #     (list{list{int}})   - list of cliques which were sampled
     if part_func == None:
-        return non_partitioning_bayes_min_var(P,constants,psi,shots,update_var=update_var)
-    # if qubitwise commutation is preferred so no entangling gates are required, use the qubitwise commutation graph here
-    aaa = part_func(commutation_graph(P))
-    aaa,aaa1,aaa2 = itertools.tee(aaa,3)
-    if not update_var&set(range(1,shots)) and not any(set(aa1)&set(aa2) for aa1,aa2 in itertools.product(aaa1,aaa2) if not aa1==aa2):
-        return non_overlapping_bayes_min_var(P,constants,psi,shots,aaa)
+        return non_partitioning_bayes_min_var(P,cc,psi,shots,update_steps=update_steps,full_simulation=full_simulation)
     p = P.paulis()
-    cdf_dict = {}
     X = np.array([[{(1,1):0,(1,-1):0,(-1,1):0,(-1,-1):0} for a1 in range(p)] for a0 in range(p)])
-    S0 = np.array([[0 for a1 in range(p)] for a0 in range(p)],dtype=int)
-    S1 = np.array([[1 for a1 in range(p)] for a0 in range(p)],dtype=float)
-    V = np.array([[bayes_Var(X[a0,a0]) if a0==a1 else bayes_Cov(X[a0,a1],X[a0,a0],X[a1,a1]) for a1 in range(p)] for a0 in range(p)])
-    U = np.array([[constants[a0]*constants[a1]*V[a0,a1]*S1[a0,a1] for a1 in range(p)] for a0 in range(p)])
-    loading_bar(0,shots)
-    for a2 in range(shots):
+    if part_func == weighted_vertex_covering_maximal_cliques:
+        aaa = part_func(commutation_graph(P),cc=cc,k=3)
+        # aaa = post_process_cliques(bayes_variance_graph(X,cc),aaa,k=10)
+    else:
+        aaa = part_func(commutation_graph(P))
+    aaa,aaa1,aaa2 = itertools.tee(aaa,3)
+    if not update_steps&set(range(1,shots)) and not any(set(aa1)&set(aa2) for aa1,aa2 in itertools.product(aaa1,aaa2) if not aa1==aa2):
+        return non_overlapping_bayes_min_var(P,cc,psi,shots,aaa,repeats=repeats)
+    D = {}
+    S = np.zeros((p,p),dtype=int)
+    Ones = [np.ones((i,i),dtype=int) for i in range(p+1)]
+    index_set = set(range(p))
+    xxx = []
+    xxx1 = []
+    for i0 in range(shots):
+        if i0 == 0 or i0 in update_steps:
+            V,D,X = variance_estimate_(P,cc,psi,D,X,xxx1)
+            xxx1 = []
+        S1 = S+Ones[p]
+        s = 1/(S.diagonal()|(S.diagonal()==0))
+        s1 = 1/S1.diagonal()
+        factor = p-np.count_nonzero(S.diagonal())
+        S1[range(p),range(p)] = [a if a != 1 else -factor for a in S1.diagonal()]
+        V1 = V*(S*s*s[:,None] - S1*s1*s1[:,None])
+        V2 = 2*V*(S*s*s[:,None] - S*s*s1[:,None])
         aaa,aaa1 = itertools.tee(aaa,2)
-        aa = sorted(max(aaa1,key=lambda x : U[x][:,x].sum()))
-        if str(aa) not in cdf_dict.keys():
-            mm,P1,cdf,bb = sample_and_remember(P,psi,aa)
-            cdf_dict[str(aa)] = (P1,cdf,bb)
-        else:
-            mm = sample_from_memory(*cdf_dict[str(aa)])
-        for (a0,m0),(a1,m1) in itertools.product(zip(aa,mm),repeat=2):
-            X[a0,a1][(m0,m1)] += 1
-        S0[np.ix_(aa,aa)] = np.add(S0[aa][:,aa],np.ones((len(aa),len(aa))))
-        for a0,a1 in itertools.product(range(p),aa):
-            if S0[a0,a1] > 0:
-                r = (S0[a0,a1])/(S0[a0,a0]*S0[a1,a1])-(S0[a0,a1]+1)/((S0[a0,a0]+1)*(S0[a1,a1]+1))
-                S1[a0,a1] = r
-                S1[a1,a0] = r
-        if (a2+1) in update_var:
-            V = np.array([[bayes_Var(X[a0,a0]) if a0==a1 else bayes_Cov(X[a0,a1],X[a0,a0],X[a1,a1]) for a1 in range(p)] for a0 in range(p)])
-            U = np.array([[constants[a0]*constants[a1]*V[a0,a1]*S1[a0,a1] for a1 in range(p)] for a0 in range(p)])
-        else:
-            for a0,a1 in itertools.product(range(p),aa):
-                r = constants[a0]*constants[a1]*V[a0,a1]*S1[a0,a1]
-                U[a0,a1] = r
-                U[a1,a0] = r
-        loading_bar(a2+1,shots,scaling=lambda x : x**(3/2))
-    return X
+        aa = sorted(max(aaa1,key=lambda xx : V1[xx][:,xx].sum()+V2[xx][:,list(index_set.difference(xx))].sum()))
+        xxx.append(aa)
+        xxx1.append(aa)
+        S[np.ix_(aa,aa)] += Ones[len(aa)]
+        loading_bar([(i0,shots),repeats],scalings=[lambda x:x**(3/2)])
+    if full_simulation:
+        for aa in xxx1:
+            aa1 = sorted(index_set.difference(aa))
+            cc1 = sample_(P,psi,aa,D)
+            for (a0,c0),(a1,c1) in itertools.product(zip(aa,cc1),repeat=2):
+                X[a0,a1][(c0,c1)] += 1
+    else:
+        X = None
+    return S,X,xxx
 
-# if the partition has no overlapping sets and we never update the variance graph,
-#     we can speed up the allocation of measurements considerably
-def non_overlapping_bayes_min_var(P,constants,psi,shots,aaa):
+# if the partition has no overlapping sets, we can speed up the allocation of measurements
+#     returns an array of dictionaries which tracks ++/+-/-+/-- outcomes for each pair of Paulis
+def non_overlapping_bayes_min_var(P,cc,psi,shots,aaa,repeats=(0,1),full_simulation=False):
     # Inputs:
-    #     P          - (pauli)           - Paulis in Hamiltonian
-    #     constants  - (list{int})       - coefficients in Hamiltonian
-    #     psi        - (numpy.array)     - ground state of Hamiltonian
-    #     shots      - (int)             - number of samples to take
-    #     aaa        - (list{list{int}}) - partition of Hamiltonian
-    #     update_var - (int)             - number of turns between updating variance estimates
+    #     P               - (pauli)           - Paulis in Hamiltonian
+    #     cc              - (list{int})       - coefficients in Hamiltonian
+    #     psi             - (numpy.array)     - ground state of Hamiltonian
+    #     shots           - (int)             - number of samples to take
+    #     aaa             - (list{list{int}}) - partition of Hamiltonian
+    #     repeats         - (tuple{int})      - current iteration and total number of iterations
+    #     full_simulation - (bool)            - set True if full simulation is required
     # Outputs:
-    #     (numpy.array{Dict}) - array of measurement outcome counts
+    #     (numpy.array{int})  - array containing number of times each pair of Paulis was measured together
+    #     (numpy.array{dict}) - array of measurement outcome counts
+    #     (list{list{int}})   - list of cliques which were sampled
     p,q = P.paulis(),P.qubits()
     X = np.array([[{(1,1):0,(1,-1):0,(-1,1):0,(-1,-1):0} for a1 in range(p)] for a0 in range(p)])
-    A = bayes_variance_graph(X,constants)
+    S = np.zeros((p,p),dtype=int)
+    Ones = [np.ones((i,i),dtype=int) for i in range(p+1)]
+    A = bayes_variance_graph(X,cc)
     aaa = list(aaa)
-    bb = [0 for aa in aaa]
-    cc = [A.adj[aa][:,aa].sum() for aa in aaa]
-    l = len(bb)
-    for _ in range(shots):
-        a2 = max(range(l),key=lambda x : cc[x])
-        bb[a2] += 1
-        cc[a2] /= (bb[a2]*(bb[a2]+1))
-    loading_bar(0,shots)
-    for a2 in range(len(aaa)):
-        aa = aaa[a2]
-        P1 = P.copy()
-        P1.delete_paulis_([a1 for a1 in range(P.paulis()) if not a1 in aa])
-        C = diagonalize(P1)
-        neg = negations(P1,C)
-        P1 = act(P1,C)
-        psi_diag = C.unitary() @ psi
-        cdf = [0]
-        for a3 in range(len(psi_diag)):
-            cdf.append(cdf[-1]+np.absolute(psi_diag[a3])**2)
-        l = len(cdf)
-        p1 = len(aa)
-        for j in range(bb[a2]):
-            r = random.uniform(0,cdf[-1])
-            sample = np.array([[max(np.where([c<=r for c in cdf])[0])&(l>>(a3+1)) for a3 in range(q)]],dtype=bool)
-            mm = [(-1)**(neg[a]^functools.reduce(lambda x,y:x^y,(sample&P1.Z)[a,:])) for a in range(p1)]
-            for (a0,m0),(a1,m1) in itertools.product(zip(aa,mm),repeat=2):
-                X[a0,a1][(m0,m1)] += 1
-            loading_bar(sum(bb[:a2])+j+1,shots)
-    return X
-
+    aa1 = [0 for aa in aaa]
+    aa2 = [np.sqrt(A.adj[aa][:,aa].sum()) for aa in aaa]
+    aa1_len = len(aa1)
+    for i in range(shots):
+        a3 = max(range(aa1_len),key=lambda x : aa2[x])
+        aa1[a3] += 1
+        aa2[a3] *= ((aa1[a3]-1) or not (aa1[a3]-1))/(aa1[a3]+1)
+    xxx = [aaa[i0] for i0 in list(itertools.chain.from_iterable([[i2]*aa1[i2] for i2 in range(len(aaa))]))]
+    for xx in xxx:
+        S[np.ix_(xx,xx)] += Ones[len(xx)]
+    l = 1<<(q-1)
+    if full_simulation:
+        for i in range(len(aaa)):
+            aa = aaa[i]
+            P1 = P.copy()
+            P1.delete_paulis_([a1 for a1 in range(P.paulis()) if not a1 in aa])
+            C = diagonalize(P1)
+            neg = negations(P1,C)
+            P1 = act(P1,C)
+            psi_diag = C.unitary() @ psi
+            pdf = np.absolute(psi_diag*psi_diag.conj())
+            p1 = len(aa)
+            for i1 in range(aa1[i]):
+                a1 = np.random.choice(1<<q,p=pdf)
+                s = np.array([[a1&(l>>a3) for a3 in range(q)]],dtype=bool)&P1.Z
+                bb = [(-1)**(neg[a]^functools.reduce(lambda x,y:x^y,s[a])) for a in range(p1)]
+                for (a0,b0),(a1,b1) in itertools.product(zip(aa,bb),repeat=2):
+                    X[a0,a1][(b0,b1)] += 1
+                loading_bar([(sum(aa1[:i])+i1,shots),repeats],scalings=[lambda x:x**(3/2)])
+    else:
+        X = None
+    return S,X,xxx
 
 
 
